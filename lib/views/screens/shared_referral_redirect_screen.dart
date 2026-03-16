@@ -5,22 +5,18 @@ import '../../services/storage_service.dart';
 import '../../utils/app_constants.dart';
 import '../widgets/gradient_background.dart';
 
-class SharedEbookRedirectScreen extends StatefulWidget {
+class SharedReferralRedirectScreen extends StatefulWidget {
   final String referralCode;
-  final String productId;
 
-  const SharedEbookRedirectScreen({
-    super.key,
-    required this.referralCode,
-    required this.productId,
-  });
+  const SharedReferralRedirectScreen({super.key, required this.referralCode});
 
   @override
-  State<SharedEbookRedirectScreen> createState() =>
-      _SharedEbookRedirectScreenState();
+  State<SharedReferralRedirectScreen> createState() =>
+      _SharedReferralRedirectScreenState();
 }
 
-class _SharedEbookRedirectScreenState extends State<SharedEbookRedirectScreen> {
+class _SharedReferralRedirectScreenState
+    extends State<SharedReferralRedirectScreen> {
   final StorageService _storageService = StorageService();
 
   @override
@@ -31,33 +27,26 @@ class _SharedEbookRedirectScreenState extends State<SharedEbookRedirectScreen> {
 
   Future<void> _handleRedirect() async {
     final referralCode = widget.referralCode.trim();
-    final productId = widget.productId.trim();
 
     if (referralCode.isNotEmpty) {
       await _storageService.saveString(
         AppConstants.pendingReferralCodeKey,
         referralCode,
       );
+    } else {
+      await _storageService.remove(AppConstants.pendingReferralCodeKey);
     }
 
-    if (productId.isNotEmpty) {
-      await _storageService.saveString(
-        AppConstants.pendingReferralProductIdKey,
-        productId,
-      );
-    }
+    await _storageService.remove(AppConstants.pendingReferralProductIdKey);
 
     final hasSession = await _storageService.hasValidSessionArtifacts();
+    if (hasSession) {
+      await _storageService.remove(AppConstants.pendingReferralCodeKey);
+    }
     if (!mounted) return;
 
     final nextRoute = hasSession
-        ? Uri(
-            path: '/ebook-detail',
-            queryParameters: {
-              if (productId.isNotEmpty) 'productId': productId,
-              if (referralCode.isNotEmpty) 'ref': referralCode,
-            },
-          ).toString()
+        ? '/home'
         : Uri(
             path: '/sign-up',
             queryParameters: {if (referralCode.isNotEmpty) 'ref': referralCode},
