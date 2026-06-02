@@ -18,6 +18,7 @@ class ApiEndpoints {
   static const String getProfile = '$user/profile';
   static const String getMyUnlocks = '$user/profile/unlocks';
   static const String updateProfile = '$user/profile';
+  static const String deleteAccount = '$user/profile';
   static const String updateUserPassword = '$user/password';
   static String getUserDetails(String id) => '$user/$id';
   static String updateUserStatus(String id) => '$user/$id/status';

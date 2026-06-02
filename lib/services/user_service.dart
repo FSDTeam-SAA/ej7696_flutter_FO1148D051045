@@ -7,7 +7,10 @@ import 'api_service.dart';
 import '../utils/api_endpoints.dart';
 
 class UserService {
-  final ApiService _apiService = ApiService();
+  final ApiService _apiService;
+
+  UserService({ApiService? apiService})
+    : _apiService = apiService ?? ApiService();
 
   /// Get current user profile
   Future<ApiResponse<UserModel>> getProfile() async {
@@ -94,6 +97,11 @@ class UserService {
       ApiEndpoints.changePassword,
       body: body,
     );
+  }
+
+  /// Permanently delete the currently authenticated account.
+  Future<ApiResponse<void>> deleteAccount() async {
+    return await _apiService.delete<void>(ApiEndpoints.deleteAccount);
   }
 
   /// Update user status (design only - no API call)

@@ -6,6 +6,17 @@ It uses a controller-driven structure with `GetX` for state management, `GoRoute
 
 ---
 
+Reference Name: API 510 Exam Unlock
+Product ID: com.inspectorspath.api510_exam_unlock
+Type: Non-Consumable
+
+
+---
+
+Type: Non-Consumable
+Reference Name: API 510 eBook Lifetime Access
+Product ID: com.inspectorspath.ebook.api510_lifetime
+
 ## Preview
 
 <p align="center">
