@@ -9,6 +9,10 @@ class AppConstants {
   static const String baseUrl = '$apiOrigin/api/v1';
   static const String publicBaseUrl = apiOrigin;
   static const Duration apiTimeout = Duration(seconds: 30);
+  
+// Feature Flags 
+  static const bool resourcesEnabled = false;
+
   // null = no timeout (wait indefinitely).
   static const Duration? examGenerationTimeout = null;
   static const String appLinkScheme = 'ejflutter';

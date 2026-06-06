@@ -15,6 +15,7 @@ import '../../services/api_service.dart';
 import '../../services/apple_iap_service.dart';
 import '../../services/exam_service.dart';
 import '../../services/storage_service.dart';
+import '../../utils/app_constants.dart';
 import '../widgets/app_shimmer.dart';
 import '../widgets/gradient_background.dart';
 import '../widgets/unlock_exam_dialog.dart';
@@ -427,6 +428,14 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
   Future<_UpgradeCheckoutSelection?> _showUpgradeAddOnSelectionDialog({
     required bool showReferralDiscount,
   }) async {
+    if (!AppConstants.resourcesEnabled) {
+      return const _UpgradeCheckoutSelection(
+        addonProductIds: <String>[],
+        addonProductCodes: <String>[],
+        expectedTotalAmount: null,
+      );
+    }
+
     final options = professionalPlan?.prePurchaseAddOnOptions ?? const [];
     final referralOffer =
         showReferralDiscount && (professionalPlan?.referralEligible ?? false)

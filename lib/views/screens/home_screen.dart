@@ -9,7 +9,6 @@ import '../../controllers/user_controller.dart';
 import '../../models/plan_tier.dart';
 // STRIPE_DISABLED: import '../../models/payment_success_details.dart';
 // STRIPE_DISABLED: import '../../models/professional_plan_model.dart';
-import '../../models/professional_plan_model.dart';
 import '../../models/user_model.dart';
 import '../../models/exam_model.dart';
 import '../../utils/referral_share_message.dart';
@@ -202,6 +201,8 @@ class HomeDashboard extends StatelessWidget {
     }
   }
 
+  // STRIPE_DISABLED: _unlockExam replaced — individual exam unlocks via Apple IAP
+  // are not available (no per-exam product in App Store Connect).
   Future<void> _unlockExam(BuildContext context, ExamModel exam) async {
     showDialog<void>(
       context: context,
@@ -879,7 +880,6 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
-
 
 // STRIPE_DISABLED: _ExamUnlockCheckoutSelection, _ExamUnlockAddOnSheet,
 // _ExamUnlockAddOnSheetState removed (exam unlocks are managed via subscription).

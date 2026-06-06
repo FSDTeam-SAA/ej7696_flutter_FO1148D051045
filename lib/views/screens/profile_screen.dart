@@ -5,7 +5,6 @@ import '../widgets/gradient_background.dart';
 import '../widgets/app_shimmer.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
-import '../../services/user_service.dart';
 import '../../controllers/user_controller.dart';
 import '../../controllers/home_controller.dart';
 import '../../models/plan_tier.dart';
@@ -21,7 +20,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
-  final UserService _userService = UserService();
   late final UserController _userController;
 
   @override
@@ -84,69 +82,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     context.go('/onboarding');
   }
 
-  Future<void> _deleteAccount() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text(
-          'This will permanently delete your account and associated app data. This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete Account'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: AppShimmerCircle(size: 36)),
-    );
-
-    final response = await _userService.deleteAccount();
-    if (!mounted) return;
-
-    Navigator.of(context, rootNavigator: true).pop();
-
-    if (!response.success) {
-      final fallback = response.statusCode == 401
-          ? 'Please sign in again before deleting your account.'
-          : 'Unable to delete account. Please try again.';
-      final message = response.message?.trim().isNotEmpty ?? false
-          ? response.message!.trim()
-          : fallback;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
-      );
-      return;
-    }
-
-    await _authService.logout();
-    await _userController.clearState();
-    if (Get.isRegistered<HomeController>()) {
-      Get.find<HomeController>().clearState();
-    }
-
-    if (!mounted) return;
-    context.go('/onboarding');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Your account has been deleted.'),
-        backgroundColor: Color(0xFF16A34A),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -387,11 +322,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 12),
                         _SettingItem(
-                          icon: Icons.delete_forever_outlined,
-                          title: 'Delete Account',
-                          subtitle: 'Permanently delete your account and data',
-                          isDestructive: true,
-                          onTap: _deleteAccount,
+                          icon: Icons.manage_accounts_outlined,
+                          title: 'Account',
+                          subtitle: 'Delete your account and data',
+                          onTap: () => context.push('/account'),
                         ),
                         const SizedBox(height: 12),
                         _SettingItem(
@@ -401,14 +335,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onTap: () {
                             context.push('/contact-us');
                           },
-                        ),
-                        const SizedBox(height: 12),
-                        _SettingItem(
-                          icon: Icons.delete_forever_outlined,
-                          title: 'Delete Account',
-                          subtitle: 'Permanently remove your account and data',
-                          isLogout: true,
-                          onTap: _deleteAccount,
                         ),
                         const SizedBox(height: 24),
                         // Log Out Button
@@ -476,7 +402,6 @@ class _SettingItem extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   final bool isLogout;
-  final bool isDestructive;
 
   const _SettingItem({
     required this.icon,
@@ -484,7 +409,6 @@ class _SettingItem extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.isLogout = false,
-    this.isDestructive = false,
   });
 
   @override
@@ -504,14 +428,14 @@ class _SettingItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: isLogout || isDestructive
+                color: isLogout
                     ? Colors.red[50]
                     : const Color(0xFF2D4F88).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
-                color: isLogout || isDestructive
+                color: isLogout
                     ? Colors.red
                     : const Color(0xFF2D4F88),
                 size: 20,
@@ -527,7 +451,7 @@ class _SettingItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: isLogout || isDestructive
+                      color: isLogout
                           ? Colors.red
                           : const Color(0xFF111827),
                     ),
