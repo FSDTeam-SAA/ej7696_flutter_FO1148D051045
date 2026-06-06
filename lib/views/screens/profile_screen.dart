@@ -50,6 +50,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _clearSessionAndRouteToOnboarding({
+    bool closeBlockingDialog = false,
+  }) async {
+    Object? logoutError;
+
+    try {
+      await _authService.logout();
+      await _userController.clearState();
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().clearState();
+      }
+    } catch (error) {
+      logoutError = error;
+    } finally {
+      if (mounted && closeBlockingDialog) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    if (!mounted) return;
+
+    if (logoutError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to log out. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    context.go('/onboarding');
+  }
+
   Future<void> _deleteAccount() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -368,6 +402,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context.push('/contact-us');
                           },
                         ),
+                        const SizedBox(height: 12),
+                        _SettingItem(
+                          icon: Icons.delete_forever_outlined,
+                          title: 'Delete Account',
+                          subtitle: 'Permanently remove your account and data',
+                          isLogout: true,
+                          onTap: _deleteAccount,
+                        ),
                         const SizedBox(height: 24),
                         // Log Out Button
                         _SettingItem(
@@ -408,23 +450,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                 );
                               }
-
-                              // Clear all user data and cache
-                              await _authService.logout();
-                              await _userController.clearState();
-                              if (Get.isRegistered<HomeController>()) {
-                                Get.find<HomeController>().clearState();
-                              }
-
-                              if (context.mounted) {
-                                // Close loading dialog
-                                Navigator.of(
-                                  context,
-                                  rootNavigator: true,
-                                ).pop();
-                                // Navigate to onboarding screen
-                                context.go('/onboarding');
-                              }
+                              await _clearSessionAndRouteToOnboarding(
+                                closeBlockingDialog: true,
+                              );
                             }
                           },
                         ),
