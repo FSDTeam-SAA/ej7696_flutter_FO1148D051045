@@ -81,7 +81,7 @@ dependencies:
   speech_to_text: ^7.0.0
 
   # Short audio clips for optional voice fallback
-  record: ^6.2.0
+  record: ^7.0.0
 
   # Shimmer loading
   shimmer: ^3.0.0
