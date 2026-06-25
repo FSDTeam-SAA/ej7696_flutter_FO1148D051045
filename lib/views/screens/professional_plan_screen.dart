@@ -3,10 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../core/error/error_handler.dart';
 import '../../services/iap_service.dart';
 import '../../utils/app_constants.dart';
+import '../../utils/legal_link_launcher.dart';
 import '../widgets/gradient_background.dart';
 
 class ProfessionalPlanScreen extends StatefulWidget {
@@ -25,19 +24,17 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
   static const String _agreementText =
       'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
-  Future<void> _openExternalUrl(String url) async {
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ErrorHandler.showSnackBar(
-        'Unable to open link. Please try again.',
-        isError: true,
-        context: context,
-      );
-    }
-  }
+  Future<void> _openPrivacyPolicy() => openLegalLink(
+    context,
+    AppConstants.privacyPolicyUrl,
+    fallbackRoute: '/privacy-policy',
+  );
+
+  Future<void> _openTermsOfUse() => openLegalLink(
+    context,
+    AppConstants.termsOfUseUrl,
+    fallbackRoute: '/terms-of-service',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -205,15 +202,11 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                 spacing: 8,
                                 children: [
                                   TextButton(
-                                    onPressed: () => _openExternalUrl(
-                                      AppConstants.termsOfUseUrl,
-                                    ),
+                                    onPressed: _openTermsOfUse,
                                     child: const Text('Terms of Use'),
                                   ),
                                   TextButton(
-                                    onPressed: () => _openExternalUrl(
-                                      AppConstants.privacyPolicyUrl,
-                                    ),
+                                    onPressed: _openPrivacyPolicy,
                                     child: const Text('Privacy Policy'),
                                   ),
                                 ],

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../controllers/user_controller.dart';
 import '../../core/error/error_handler.dart';
@@ -19,6 +18,7 @@ import '../../services/exam_service.dart';
 import '../../services/iap_service.dart';
 import '../../services/storage_service.dart';
 import '../../utils/app_constants.dart';
+import '../../utils/legal_link_launcher.dart';
 import '../widgets/app_shimmer.dart';
 import '../widgets/gradient_background.dart';
 import '../widgets/unlock_exam_dialog.dart';
@@ -253,17 +253,17 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     return message.contains('resource purchase id already exists');
   }
 
-  Future<void> _openExternalUrl(String url) async {
-    final uri = Uri.parse(url);
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      ErrorHandler.showSnackBar(
-        'Unable to open link. Please try again.',
-        isError: true,
-        context: context,
-      );
-    }
-  }
+  Future<void> _openPrivacyPolicy() => openLegalLink(
+    context,
+    AppConstants.privacyPolicyUrl,
+    fallbackRoute: '/privacy-policy',
+  );
+
+  Future<void> _openTermsOfUse() => openLegalLink(
+    context,
+    AppConstants.termsOfUseUrl,
+    fallbackRoute: '/terms-of-service',
+  );
 
   Future<void> _completeProfessionalUpgradeSuccess(
     ExamModel exam, {
@@ -544,11 +544,11 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
         runSpacing: 4,
         children: [
           TextButton(
-            onPressed: () => _openExternalUrl(AppConstants.privacyPolicyUrl),
+            onPressed: _openPrivacyPolicy,
             child: const Text('Privacy Policy'),
           ),
           TextButton(
-            onPressed: () => _openExternalUrl(AppConstants.termsOfUseUrl),
+            onPressed: _openTermsOfUse,
             child: const Text('Terms of Use'),
           ),
         ],
@@ -1302,12 +1302,11 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
               runSpacing: 0,
               children: [
                 TextButton(
-                  onPressed: () => _openExternalUrl(AppConstants.termsOfUseUrl),
+                  onPressed: _openTermsOfUse,
                   child: const Text('Terms of Use'),
                 ),
                 TextButton(
-                  onPressed: () =>
-                      _openExternalUrl(AppConstants.privacyPolicyUrl),
+                  onPressed: _openPrivacyPolicy,
                   child: const Text('Privacy Policy'),
                 ),
               ],
