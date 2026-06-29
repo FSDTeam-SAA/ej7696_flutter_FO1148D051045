@@ -659,6 +659,15 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       return;
     }
 
+    if (Platform.isAndroid) {
+      ErrorHandler.showSnackBar(
+        'Purchases are currently unavailable on Android.',
+        isError: true,
+        context: context,
+      );
+      return;
+    }
+
     if (isProfessionalActive) {
       final selection = await _showUpgradeAddOnSelectionDialog(
         showReferralDiscount: false,
