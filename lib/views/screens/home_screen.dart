@@ -341,6 +341,15 @@ class HomeDashboard extends StatelessWidget {
   }
 
   Future<void> _unlockExam(BuildContext context, ExamModel exam) async {
+    if (Platform.isAndroid) {
+      ErrorHandler.showSnackBar(
+        'Purchases are currently unavailable on Android.',
+        isError: true,
+        context: context,
+      );
+      return;
+    }
+
     final examId = exam.id.trim();
     if (examId.isEmpty) {
       ErrorHandler.showSnackBar(
@@ -846,6 +855,15 @@ class HomeDashboard extends StatelessWidget {
                             examId: course.examId ?? course.id,
                             examCode: course.code,
                             examName: course.title,
+                          );
+                          return;
+                        }
+
+                        if (Platform.isAndroid) {
+                          ErrorHandler.showSnackBar(
+                            'Purchases are currently unavailable on Android.',
+                            isError: true,
+                            context: context,
                           );
                           return;
                         }

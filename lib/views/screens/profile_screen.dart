@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:get/get.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../widgets/gradient_background.dart';
 import '../widgets/app_shimmer.dart';
 import '../../core/error/error_handler.dart';
@@ -15,6 +14,7 @@ import '../../controllers/home_controller.dart';
 import '../../models/plan_tier.dart';
 import '../../services/iap_service.dart';
 import '../../utils/app_constants.dart';
+import '../../utils/legal_link_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
   final PlanTier planTier;
@@ -57,19 +57,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _openExternalUrl(String url) async {
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ErrorHandler.showSnackBar(
-        'Unable to open link. Please try again.',
-        isError: true,
-        context: context,
-      );
-    }
-  }
+  Future<void> _openPrivacyPolicy() => openLegalLink(
+    context,
+    AppConstants.privacyPolicyUrl,
+    fallbackRoute: '/privacy-policy',
+  );
+
+  Future<void> _openTermsOfUse() => openLegalLink(
+    context,
+    AppConstants.termsOfUseUrl,
+    fallbackRoute: '/terms-of-service',
+  );
 
   Future<void> _clearSessionAndRouteToOnboarding({
     bool closeBlockingDialog = false,
@@ -388,7 +386,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           title: 'Privacy Policy',
                           subtitle: 'How we handle your data',
                           onTap: () {
-                            _openExternalUrl(AppConstants.privacyPolicyUrl);
+                            _openPrivacyPolicy();
                           },
                         ),
                         const SizedBox(height: 12),
@@ -397,7 +395,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           title: 'Terms of Use',
                           subtitle: 'App usage terms and conditions',
                           onTap: () {
-                            _openExternalUrl(AppConstants.termsOfUseUrl);
+                            _openTermsOfUse();
                           },
                         ),
                         const SizedBox(height: 12),
