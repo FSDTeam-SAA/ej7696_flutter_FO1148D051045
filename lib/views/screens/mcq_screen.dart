@@ -73,6 +73,9 @@ class _McqScreenState extends State<McqScreen>
   int _currentIndex = 0;
   final Map<int, Set<int>> _selectedIndexes = {};
   final Set<int> _lockedQuestions = {};
+  final Set<int> _submittedMultiSelectQuestions = {};
+  final Set<int> _revealedMultiSelectQuestions = {};
+  final Set<int> _incorrectMultiSelectQuestions = {};
   final Set<int> _flaggedQuestions = {};
   bool _showExplanation = false;
   bool _isSpeaking = false;
@@ -1181,6 +1184,22 @@ class _McqScreenState extends State<McqScreen>
 
   bool _hasAnswer(int questionIndex) => _selectedFor(questionIndex).isNotEmpty;
 
+  bool _isQuestionComplete(int questionIndex) {
+    final question = _questions[questionIndex];
+    if (!question.isMultiSelect || widget.voicePracticeMode) {
+      return _hasAnswer(questionIndex);
+    }
+    return _submittedMultiSelectQuestions.contains(questionIndex);
+  }
+
+  int get _answeredQuestionCount {
+    int count = 0;
+    for (int index = 0; index < _questions.length; index++) {
+      if (_isQuestionComplete(index)) count += 1;
+    }
+    return count;
+  }
+
   bool _isAnswerCorrect(_Question question, Set<int> selected) {
     return selected.isNotEmpty &&
         question.correctIndexes.isNotEmpty &&
@@ -1213,6 +1232,15 @@ class _McqScreenState extends State<McqScreen>
         } else {
           _selectedIndexes[_currentIndex] = selected;
         }
+
+        if (!widget.voicePracticeMode &&
+            selected.contains(index) &&
+            question.correctIndexes.isNotEmpty &&
+            !question.correctIndexes.contains(index)) {
+          _incorrectMultiSelectQuestions.add(_currentIndex);
+          _revealedMultiSelectQuestions.add(_currentIndex);
+          _lockedQuestions.add(_currentIndex);
+        }
         return;
       }
       _selectedIndexes[_currentIndex] = {index};
@@ -1223,7 +1251,35 @@ class _McqScreenState extends State<McqScreen>
     });
   }
 
+  void _submitMultiSelectAnswer() {
+    final question = _questions[_currentIndex];
+    final selected = _selectedFor(_currentIndex);
+    if (!question.isMultiSelect ||
+        widget.voicePracticeMode ||
+        selected.isEmpty ||
+        _submittedMultiSelectQuestions.contains(_currentIndex)) {
+      return;
+    }
+
+    final isCorrect = _isAnswerCorrect(question, selected);
+    setState(() {
+      _submittedMultiSelectQuestions.add(_currentIndex);
+      _lockedQuestions.add(_currentIndex);
+      if (!isCorrect) {
+        _incorrectMultiSelectQuestions.add(_currentIndex);
+        _revealedMultiSelectQuestions.add(_currentIndex);
+      }
+    });
+  }
+
   void _onNext() async {
+    final question = _questions[_currentIndex];
+    if (question.isMultiSelect &&
+        !widget.voicePracticeMode &&
+        !_submittedMultiSelectQuestions.contains(_currentIndex)) {
+      if (!_hasAnswer(_currentIndex)) return;
+      _submitMultiSelectAnswer();
+    }
     final bool hasAnswer = _hasAnswer(_currentIndex);
     final bool isFlagged = _flaggedQuestions.contains(_currentIndex);
     if (!hasAnswer && !isFlagged) return;
@@ -2697,10 +2753,14 @@ class _McqScreenState extends State<McqScreen>
     final _Question question = _questions[_currentIndex];
     final Set<int> selected = _selectedFor(_currentIndex);
     final bool hasSelection = selected.isNotEmpty;
+    final bool isMultiSelectRevealed = _revealedMultiSelectQuestions.contains(
+      _currentIndex,
+    );
     final bool canViewExplanation = hasSelection;
     final bool isFlagged = _flaggedQuestions.contains(_currentIndex);
-    final bool canGoNext =
-        hasSelection || isFlagged || widget.voicePracticeMode;
+    final bool canGoNext = question.isMultiSelect && !widget.voicePracticeMode
+        ? hasSelection
+        : hasSelection || isFlagged || widget.voicePracticeMode;
     final String timerLabel = _remaining == null
         ? '--:--'
         : _formatDuration(_remaining!);
@@ -2754,7 +2814,7 @@ class _McqScreenState extends State<McqScreen>
                   children: [
                     _InfoPill(
                       label:
-                          '${_selectedIndexes.length}/${_questions.length} Question Answered',
+                          '$_answeredQuestionCount/${_questions.length} Question Answered',
                     ),
                     if (_isTimedSession) ...[
                       const SizedBox(width: 8),
@@ -2790,7 +2850,7 @@ class _McqScreenState extends State<McqScreen>
                     separatorBuilder: (_, _) => const SizedBox(width: 10),
                     itemBuilder: (context, index) {
                       final Set<int> sel = _selectedFor(index);
-                      final bool isAnswered = sel.isNotEmpty;
+                      final bool isAnswered = _isQuestionComplete(index);
                       final bool isFlag = _flaggedQuestions.contains(index);
                       final bool isCurrent = index == _currentIndex;
                       Color border = const Color(0xFF2D4F88);
@@ -2825,6 +2885,7 @@ class _McqScreenState extends State<McqScreen>
                       if (isCurrent) border = const Color(0xFF111827);
 
                       return GestureDetector(
+                        key: ValueKey('question-number-$index'),
                         onTap: () {
                           unawaited(_stopTtsPlayback());
                           _invalidateListenSession('question_number_tap');
@@ -2895,7 +2956,25 @@ class _McqScreenState extends State<McqScreen>
                   Color fillColor = const Color(0xFFF3F4F6);
                   Color textColor = const Color(0xFF111827);
 
-                  if (hasSelection) {
+                  if (question.isMultiSelect && !widget.voicePracticeMode) {
+                    if (question.correctIndexes.isEmpty && isSelected) {
+                      borderColor = const Color(0xFF2F6DE0);
+                      fillColor = const Color(0xFFE7F0FF);
+                      textColor = const Color(0xFF1E4C9A);
+                    } else if (isSelected && isCorrect) {
+                      borderColor = const Color(0xFF2DBD67);
+                      fillColor = const Color(0xFFD8F5D8);
+                      textColor = const Color(0xFF1B6C3E);
+                    } else if (isSelected && !isCorrect) {
+                      borderColor = const Color(0xFFE24B4B);
+                      fillColor = const Color(0xFFFFD6D6);
+                      textColor = const Color(0xFFB42323);
+                    } else if (isMultiSelectRevealed && isCorrect) {
+                      borderColor = const Color(0xFF2DBD67);
+                      fillColor = const Color(0xFFD8F5D8);
+                      textColor = const Color(0xFF1B6C3E);
+                    }
+                  } else if (hasSelection) {
                     if (question.correctIndexes.isNotEmpty) {
                       if (isCorrect) {
                         borderColor = const Color(0xFF2DBD67);
@@ -2917,6 +2996,7 @@ class _McqScreenState extends State<McqScreen>
                   return GestureDetector(
                     onTap: locked ? null : () => _onSelect(index),
                     child: Container(
+                      key: ValueKey('answer-option-$index'),
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -2929,6 +3009,39 @@ class _McqScreenState extends State<McqScreen>
                       ),
                       child: Row(
                         children: [
+                          if (question.isMultiSelect) ...[
+                            Checkbox(
+                              key: ValueKey('multi-select-checkbox-$index'),
+                              value: isSelected,
+                              onChanged: locked
+                                  ? null
+                                  : (_) => _onSelect(index),
+                              checkColor: Colors.white,
+                              fillColor: WidgetStateProperty.resolveWith((
+                                states,
+                              ) {
+                                if (!states.contains(WidgetState.selected)) {
+                                  return Colors.white;
+                                }
+                                if (question.correctIndexes.isEmpty) {
+                                  return const Color(0xFF2F6DE0);
+                                }
+                                if (isSelected && !isCorrect) {
+                                  return const Color(0xFFE24B4B);
+                                }
+                                if (isCorrect) {
+                                  return const Color(0xFF2DBD67);
+                                }
+                                return const Color(0xFF2F6DE0);
+                              }),
+                              side: BorderSide(color: borderColor, width: 1.5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
                           Container(
                             width: 24,
                             height: 24,
