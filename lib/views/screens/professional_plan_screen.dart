@@ -19,8 +19,9 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
   final RxBool _screenTick = false.obs;
   static const String _benefitsText =
       'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
-  static const String _renewalText =
-      'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
+  String get _renewalText => Platform.isAndroid
+      ? 'This subscription auto-renews every 6 months unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
+      : 'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
   static const String _agreementText =
       'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
@@ -39,9 +40,10 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
   @override
   Widget build(BuildContext context) {
     final IapService? iapService =
-        Platform.isIOS && Get.isRegistered<IapService>()
+        (Platform.isIOS || Platform.isAndroid) && Get.isRegistered<IapService>()
         ? Get.find<IapService>()
         : null;
+    final isMobileStore = Platform.isIOS || Platform.isAndroid;
     return Scaffold(
       body: GradientBackground(
         useImage: true,
@@ -86,7 +88,7 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                         _screenTick.value;
                         final appStorePrice = iapService?.professionalPrice;
                         final iapUnavailable =
-                            Platform.isIOS &&
+                            isMobileStore &&
                             (iapService == null ||
                                 !iapService.isStoreAvailable.value ||
                                 appStorePrice == null);
@@ -179,7 +181,7 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                 ),
                               ),
                               const SizedBox(height: 14),
-                              const Text(
+                              Text(
                                 _renewalText,
                                 style: TextStyle(
                                   fontSize: 13,

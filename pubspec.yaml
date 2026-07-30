@@ -16,7 +16,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.5+26
+version: 1.0.5+30
 
 environment:
   sdk: ^3.10.4
@@ -74,8 +74,9 @@ dependencies:
   # Stripe payments
   flutter_stripe: ^12.2.0
 
-  # Apple / Google in-app purchases
-  in_app_purchase: ^3.3.0
+  # RevenueCat subscriptions and in-app purchases
+  purchases_flutter: ^10.5.0
+  purchases_ui_flutter: ^10.5.0
 
   # Text to speech
   flutter_tts: ^3.8.5

@@ -49,7 +49,6 @@ class VoiceCommandProcessor {
     required QuizVoiceScreen screen,
     required String heardText,
     required CommandSensitivity sensitivity,
-    // TODO: Wire this to persisted voice settings when the settings step lands.
     bool cloudFallbackEnabled = false,
     CloudSpeechTranscriber? cloudSpeechService,
     File? fallbackAudioFile,

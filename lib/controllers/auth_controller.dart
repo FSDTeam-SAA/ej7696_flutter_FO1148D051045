@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../core/error/error_handler.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/iap_service.dart';
 import '../controllers/user_controller.dart';
 import '../controllers/home_controller.dart';
 import '../utils/app_constants.dart';
@@ -62,6 +63,7 @@ class AuthController extends GetxController {
             password: newPassword,
             rememberMe: rememberMe,
           );
+          await _identifyPurchasesUser();
           await userController.refreshProfile();
           if (homeController != null) {
             await homeController.fetchActiveExams();
@@ -82,6 +84,7 @@ class AuthController extends GetxController {
           password: password,
           rememberMe: rememberMe,
         );
+        await _identifyPurchasesUser();
         await userController.refreshProfile();
         if (homeController != null) {
           await homeController.fetchActiveExams();
@@ -138,6 +141,12 @@ class AuthController extends GetxController {
       );
     } else {
       await _storageService.clearRememberedLogin();
+    }
+  }
+
+  Future<void> _identifyPurchasesUser() async {
+    if (Get.isRegistered<IapService>()) {
+      await Get.find<IapService>().identifyCurrentUser();
     }
   }
 

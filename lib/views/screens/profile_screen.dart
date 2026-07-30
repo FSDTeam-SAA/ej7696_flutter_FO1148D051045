@@ -349,14 +349,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             context.push('/subscribe');
                           },
                         ),
-                        if (Platform.isIOS &&
+                        if ((Platform.isIOS || Platform.isAndroid) &&
                             Get.isRegistered<IapService>()) ...[
+                          const SizedBox(height: 12),
+                          _SettingItem(
+                            icon: Icons.manage_accounts_outlined,
+                            title: 'Manage Subscription',
+                            subtitle:
+                                'Open billing help, cancellation, and restore options',
+                            onTap: () async {
+                              final iapService = Get.find<IapService>();
+                              final opened = await iapService
+                                  .presentCustomerCenter();
+                              if (!opened && context.mounted) {
+                                ErrorHandler.showSnackBar(
+                                  iapService.errorMessage.value,
+                                  isError: true,
+                                  context: context,
+                                );
+                              }
+                            },
+                          ),
                           const SizedBox(height: 12),
                           _SettingItem(
                             icon: Icons.restore,
                             title: 'Restore Purchase',
-                            subtitle:
-                                'Restore Apple purchases for this account',
+                            subtitle: Platform.isAndroid
+                                ? 'Restore Google Play purchases for this account'
+                                : 'Restore Apple purchases for this account',
                             onTap: () {
                               Get.find<IapService>().restorePurchases();
                             },
