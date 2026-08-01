@@ -24,7 +24,12 @@ const Map<String, String> examIapProductIds = {
   'API_SIRE': 'com.inspectorspath.exam.sire.unlock',
 };
 
-const String professionalSubscriptionProductId = 'six_month_subscriptions';
+const String professionalSubscriptionId = 'six_month_subscriptions';
+const String professionalSubscriptionBasePlanId = 'six-month';
+const String androidProfessionalSubscriptionProductId =
+    '$professionalSubscriptionId:$professionalSubscriptionBasePlanId';
+const String appleProfessionalSubscriptionProductId =
+    professionalSubscriptionId;
 const String professionalEntitlementId = 'professional_access';
 
 enum IapPurchaseKind { exam, professional }
@@ -64,9 +69,11 @@ class IapService extends GetxService {
   );
   static const String _revenueCatGoogleApiKey = String.fromEnvironment(
     'REVENUECAT_GOOGLE_API_KEY',
+    defaultValue: 'goog_uLvOSubEioODfankUqvoYaTLTxX',
   );
   static const String _revenueCatAppleApiKey = String.fromEnvironment(
     'REVENUECAT_APPLE_API_KEY',
+    defaultValue: 'appl_HYHXtAdEYRVNrYzLmMQuqWLOOcc',
   );
 
   final ExamService _examService = ExamService();
@@ -91,6 +98,9 @@ class IapService extends GetxService {
       Rx<IapCompletedPurchase?>(null);
 
   bool get isMobileStore => Platform.isIOS || Platform.isAndroid;
+  String get professionalSubscriptionProductId => Platform.isAndroid
+      ? androidProfessionalSubscriptionProductId
+      : appleProfessionalSubscriptionProductId;
   bool get hasLoadedProducts => _revenueCatProducts.isNotEmpty;
   bool get isRevenueCatConfigured => _revenueCatConfigured;
   rc.CustomerInfo? get customerInfo => _latestCustomerInfo;
@@ -242,7 +252,14 @@ class IapService extends GetxService {
       await rc.Purchases.setLogLevel(
         kDebugMode ? rc.LogLevel.debug : rc.LogLevel.warn,
       );
-      final alreadyConfigured = await rc.Purchases.isConfigured;
+      var alreadyConfigured = await rc.Purchases.isConfigured;
+      // A Flutter hot restart keeps the Android RevenueCat singleton alive.
+      // Reset it in debug mode so changes to dart-define/default API keys are
+      // applied without requiring the emulator process to be killed manually.
+      if (kDebugMode && Platform.isAndroid && alreadyConfigured) {
+        await rc.Purchases.close();
+        alreadyConfigured = await rc.Purchases.isConfigured;
+      }
       if (!alreadyConfigured) {
         final userId = (await _storageService.getUserId())?.trim();
         final configuration = rc.PurchasesConfiguration(apiKey)
@@ -294,7 +311,7 @@ class IapService extends GetxService {
           )
           .toList(growable: false);
       if (subscriptionProducts.isEmpty) {
-        subscriptionProducts = await rc.Purchases.getProducts(const <String>[
+        subscriptionProducts = await rc.Purchases.getProducts(<String>[
           professionalSubscriptionProductId,
         ], productCategory: rc.ProductCategory.subscription);
       }

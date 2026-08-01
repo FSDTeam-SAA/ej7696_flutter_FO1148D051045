@@ -5,8 +5,10 @@ The Flutter integration is installed and uses:
 - `purchases_flutter: ^10.5.0`
 - `purchases_ui_flutter: ^10.5.0`
 - Test Store public SDK key: `test_zIiSHVlGWkfVsHoxQhsRXlfqkcv`
+- Android Google Play public SDK key is configured as the Android default
 - Subscription entitlement: `professional_access`
-- Subscription product: `six_month_subscriptions`
+- Android subscription product: `six_month_subscriptions:six-month`
+- iOS subscription product: `six_month_subscriptions`
 - The RevenueCat **current Offering**, so products and paywalls can be changed without an app release
 
 The test key is a public client SDK key, not a RevenueCat secret key. Never put a RevenueCat secret API key in Flutter code.
@@ -47,7 +49,7 @@ Before production:
 
 1. Add the iOS app in RevenueCat with bundle ID `com.khalid.inspectorspath` and connect App Store Connect.
 2. Add the Android app with the exact Play application ID used by the release build (`com.Khalid.inspectorspath`) and connect its Play service credentials.
-3. Create the six-month auto-renewing subscription in App Store Connect and the corresponding subscription/base plan in Google Play Console.
+3. Create the six-month auto-renewing subscription in App Store Connect. In Google Play Console use subscription ID `six_month_subscriptions` and base plan ID `six-month`; RevenueCat exposes that Android product as `six_month_subscriptions:six-month`.
 4. Import both store products into RevenueCat instead of manually retyping identifiers where import is available.
 5. Attach both platform products to the same `professional_access` entitlement.
 6. Put the equivalent iOS and Android products into the same Six Month package in the current Offering.
@@ -57,7 +59,7 @@ The existing one-time exam product IDs are listed in `lib/services/iap_service.d
 
 ## 4. API key selection
 
-The supplied Test Store key is the code default, so a debug build works without extra flags after the dashboard setup is finished. Production builds should override it with each app's public SDK key:
+The Android Google Play public SDK key is the Android default, so ordinary Android IDE runs use Google Play instead of RevenueCat Test Store. Build-time definitions can still override each platform key:
 
 ```sh
 flutter run --dart-define=REVENUECAT_API_KEY=your_public_test_store_key
