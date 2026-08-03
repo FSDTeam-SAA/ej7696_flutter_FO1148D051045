@@ -516,7 +516,7 @@ class _EbookDetailScreenState extends State<EbookDetailScreen> {
   }
 
   Future<void> _startCheckout(EbookProduct product) async {
-    if (Platform.isIOS) {
+    if (Platform.isIOS || Platform.isAndroid) {
       ErrorHandler.showSnackBar(
         'Purchases are currently unavailable. Please try again later.',
         isError: true,
@@ -969,7 +969,7 @@ class _EbookDetailScreenState extends State<EbookDetailScreen> {
                                 size: 18,
                               ),
                         label: Text(
-                          Platform.isIOS && !isUnlocked
+                          (Platform.isIOS || Platform.isAndroid) && !isUnlocked
                               ? 'Purchases unavailable'
                               : product.isBundle
                               ? isUnlocked

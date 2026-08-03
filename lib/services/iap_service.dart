@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:purchases_flutter/purchases_flutter.dart' as rc;
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart' as rc_ui;
 
 import '../controllers/user_controller.dart';
 import '../models/payment_success_details.dart';
-import 'api_service.dart';
 import 'exam_service.dart';
+import 'storage_service.dart';
 
 const Map<String, String> examIapProductIds = {
   'API_1184': 'com.inspectorspath.exam.api1184.unlock',
@@ -22,7 +24,13 @@ const Map<String, String> examIapProductIds = {
   'API_SIRE': 'com.inspectorspath.exam.sire.unlock',
 };
 
-const String professionalSubscriptionProductId = 'six_month_subscriptions';
+const String professionalSubscriptionId = 'six_month_subscriptions';
+const String professionalSubscriptionBasePlanId = 'six-month';
+const String androidProfessionalSubscriptionProductId =
+    '$professionalSubscriptionId:$professionalSubscriptionBasePlanId';
+const String appleProfessionalSubscriptionProductId =
+    professionalSubscriptionId;
+const String professionalEntitlementId = 'professional_access';
 
 enum IapPurchaseKind { exam, professional }
 
@@ -46,36 +54,62 @@ class _PendingIapIntent {
   final IapPurchaseKind kind;
   final String productId;
   final String? examId;
-  final String? examCode;
 
   const _PendingIapIntent({
     required this.kind,
     required this.productId,
     this.examId,
-    this.examCode,
   });
 }
 
 class IapService extends GetxService {
-  final InAppPurchase _iap = InAppPurchase.instance;
-  final ApiService _apiService = ApiService();
-  final ExamService _examService = ExamService();
+  static const String _revenueCatApiKey = String.fromEnvironment(
+    'REVENUECAT_API_KEY',
+    defaultValue: 'test_zIiSHVlGWkfVsHoxQhsRXlfqkcv',
+  );
+  static const String _revenueCatGoogleApiKey = String.fromEnvironment(
+    'REVENUECAT_GOOGLE_API_KEY',
+    defaultValue: 'goog_uLvOSubEioODfankUqvoYaTLTxX',
+  );
+  static const String _revenueCatAppleApiKey = String.fromEnvironment(
+    'REVENUECAT_APPLE_API_KEY',
+    defaultValue: 'appl_HYHXtAdEYRVNrYzLmMQuqWLOOcc',
+  );
 
-  StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
+  final ExamService _examService = ExamService();
+  final StorageService _storageService = StorageService();
+
   final Map<String, _PendingIapIntent> _pendingIntents = {};
+  final Map<String, rc.StoreProduct> _revenueCatProducts = {};
+  final Map<String, rc.Package> _revenueCatPackages = {};
+  rc.Offerings? _offerings;
+  rc.CustomerInfo? _latestCustomerInfo;
+  bool _revenueCatConfigured = false;
+  late final rc.CustomerInfoUpdateListener _customerInfoListener =
+      _handleRevenueCatCustomerInfo;
 
   final RxBool isStoreAvailable = false.obs;
   final RxBool isLoadingProducts = false.obs;
   final RxBool isRestoring = false.obs;
   final RxString errorMessage = ''.obs;
-  final RxMap<String, ProductDetails> products = <String, ProductDetails>{}.obs;
   final RxSet<String> missingProductIds = <String>{}.obs;
   final RxSet<String> inFlightProductIds = <String>{}.obs;
   final Rx<IapCompletedPurchase?> lastCompletedPurchase =
       Rx<IapCompletedPurchase?>(null);
 
-  bool get shouldUseAppleIap => Platform.isIOS;
-  bool get hasLoadedProducts => products.isNotEmpty;
+  bool get isMobileStore => Platform.isIOS || Platform.isAndroid;
+  String get professionalSubscriptionProductId => Platform.isAndroid
+      ? androidProfessionalSubscriptionProductId
+      : appleProfessionalSubscriptionProductId;
+  bool get hasLoadedProducts => _revenueCatProducts.isNotEmpty;
+  bool get isRevenueCatConfigured => _revenueCatConfigured;
+  rc.CustomerInfo? get customerInfo => _latestCustomerInfo;
+  rc.Offering? get currentOffering => _offerings?.current;
+  bool get hasActiveProfessionalEntitlement =>
+      _latestCustomerInfo?.entitlements.active.containsKey(
+        professionalEntitlementId,
+      ) ??
+      false;
 
   Set<String> get allProductIds => <String>{
     ...examIapProductIds.values,
@@ -83,102 +117,42 @@ class IapService extends GetxService {
   };
 
   Future<IapService> init() async {
-    if (!shouldUseAppleIap) {
-      debugPrint('IAP: Apple IAP disabled on this platform.');
+    if (!isMobileStore) {
+      debugPrint('IAP: mobile store purchases disabled on this platform.');
       return this;
     }
 
-    _purchaseSubscription ??= _iap.purchaseStream.listen(
-      _handlePurchaseUpdates,
-      onError: (Object error, StackTrace stackTrace) {
-        debugPrint('IAP: purchase stream error: $error');
-        errorMessage.value =
-            'Purchases are currently unavailable. Please try again later.';
-      },
-      onDone: () {
-        debugPrint('IAP: purchase stream closed.');
-        _purchaseSubscription?.cancel();
-        _purchaseSubscription = null;
-      },
-    );
-
+    await _configureRevenueCat();
     await loadProducts();
     return this;
   }
 
   @override
   void onClose() {
-    _purchaseSubscription?.cancel();
-    _purchaseSubscription = null;
+    if (_revenueCatConfigured) {
+      rc.Purchases.removeCustomerInfoUpdateListener(_customerInfoListener);
+    }
     super.onClose();
   }
 
   Future<void> loadProducts() async {
-    if (!shouldUseAppleIap || isLoadingProducts.value) return;
-
-    isLoadingProducts.value = true;
-    errorMessage.value = '';
-
-    final ids = allProductIds;
-    debugPrint('IAP: querying product IDs: ${ids.join(', ')}');
-
-    try {
-      final available = await _iap.isAvailable();
-      isStoreAvailable.value = available;
-      if (!available) {
-        debugPrint('IAP: store not available.');
-        errorMessage.value =
-            'Purchases are currently unavailable. Please try again later.';
-        return;
-      }
-
-      final response = await _iap.queryProductDetails(ids);
-      debugPrint(
-        'IAP: products returned: '
-        '${response.productDetails.map((p) => '${p.id}=${p.price}').join(', ')}',
-      );
-      if (response.error != null) {
-        debugPrint('IAP: product query error: ${response.error}');
-        errorMessage.value =
-            'Purchases are currently unavailable. Please try again later.';
-      }
-
-      products.assignAll({
-        for (final product in response.productDetails) product.id: product,
-      });
-      missingProductIds.assignAll(response.notFoundIDs.toSet());
-      if (missingProductIds.isNotEmpty) {
-        debugPrint('IAP: missing product IDs: ${missingProductIds.join(', ')}');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('IAP: failed to load products: $e');
-      debugPrint('$stackTrace');
-      errorMessage.value =
-          'Purchases are currently unavailable. Please try again later.';
-    } finally {
-      isLoadingProducts.value = false;
-    }
-  }
-
-  ProductDetails? productForExam({
-    required String? examCode,
-    required String? examName,
-  }) {
-    final code = resolveExamCode(code: examCode, name: examName);
-    if (code == null) return null;
-    final productId = examIapProductIds[code];
-    if (productId == null) return null;
-    return products[productId];
+    if (!isMobileStore || isLoadingProducts.value) return;
+    await _loadRevenueCatProducts();
   }
 
   String? priceForExam({required String? examCode, required String? examName}) {
-    return productForExam(examCode: examCode, examName: examName)?.price;
+    final code = resolveExamCode(code: examCode, name: examName);
+    final productId = code == null ? null : examIapProductIds[code];
+    return productId == null
+        ? null
+        : _revenueCatProducts[productId]?.priceString;
   }
 
-  ProductDetails? get professionalProduct =>
-      products[professionalSubscriptionProductId];
+  bool get hasProfessionalProduct =>
+      _revenueCatProducts.containsKey(professionalSubscriptionProductId);
 
-  String? get professionalPrice => professionalProduct?.price;
+  String? get professionalPrice =>
+      _revenueCatProducts[professionalSubscriptionProductId]?.priceString;
 
   String? resolveExamCode({String? code, String? name}) {
     final rawCode = (code ?? '').trim();
@@ -212,7 +186,7 @@ class IapService extends GetxService {
     required String? examCode,
     required String examName,
   }) async {
-    if (!shouldUseAppleIap) return false;
+    if (!isMobileStore) return false;
     final resolvedCode = resolveExamCode(code: examCode, name: examName);
     final productId = resolvedCode == null
         ? null
@@ -221,79 +195,34 @@ class IapService extends GetxService {
       errorMessage.value = 'Purchase is not available for this exam.';
       return false;
     }
-    return _buyProduct(
+    final intent = _PendingIapIntent(
+      kind: IapPurchaseKind.exam,
       productId: productId,
-      intent: _PendingIapIntent(
-        kind: IapPurchaseKind.exam,
-        productId: productId,
-        examId: examId,
-        examCode: resolvedCode,
-      ),
+      examId: examId,
     );
+    return _buyRevenueCatProduct(productId: productId, intent: intent);
   }
 
   Future<bool> buyProfessionalSubscription({String? selectedExamId}) async {
-    if (!shouldUseAppleIap) return false;
-    return _buyProduct(
-      productId: professionalSubscriptionProductId,
-      intent: _PendingIapIntent(
-        kind: IapPurchaseKind.professional,
-        productId: professionalSubscriptionProductId,
-        examId: selectedExamId,
-      ),
-    );
-  }
-
-  Future<bool> _buyProduct({
-    required String productId,
-    required _PendingIapIntent intent,
-  }) async {
-    if (inFlightProductIds.contains(productId)) {
-      errorMessage.value = 'A purchase is already in progress.';
-      return false;
-    }
-
-    if (!isStoreAvailable.value || products[productId] == null) {
-      await loadProducts();
-    }
-
-    final product = products[productId];
-    if (!isStoreAvailable.value || product == null) {
-      debugPrint('IAP: product not found or store unavailable: $productId');
-      errorMessage.value =
-          'Purchases are currently unavailable. Please try again later.';
-      return false;
-    }
-
-    debugPrint('IAP: purchase started: $productId');
-    _pendingIntents[productId] = intent;
-    inFlightProductIds.add(productId);
-    errorMessage.value = '';
-
-    try {
-      final purchaseParam = PurchaseParam(productDetails: product);
-      return await _iap.buyNonConsumable(purchaseParam: purchaseParam);
-    } catch (e, stackTrace) {
-      debugPrint('IAP: purchase start failed for $productId: $e');
-      debugPrint('$stackTrace');
-      inFlightProductIds.remove(productId);
-      _pendingIntents.remove(productId);
-      errorMessage.value = 'Purchase failed. Please try again.';
-      return false;
-    }
+    if (!isMobileStore) return false;
+    return presentProfessionalPaywall(selectedExamId: selectedExamId);
   }
 
   Future<void> restorePurchases() async {
-    if (!shouldUseAppleIap) return;
+    if (!isMobileStore) return;
     if (isRestoring.value) return;
     isRestoring.value = true;
     errorMessage.value = '';
     debugPrint('IAP: restore started.');
     try {
-      if (!isStoreAvailable.value) {
-        await loadProducts();
+      if (!_revenueCatConfigured) {
+        errorMessage.value = 'Purchases are not configured for this app build.';
+        return;
       }
-      await _iap.restorePurchases();
+      await identifyCurrentUser();
+      final customerInfo = await rc.Purchases.restorePurchases();
+      await _applyRevenueCatAccess(customerInfo);
+      errorMessage.value = 'Purchases restored successfully.';
     } catch (e, stackTrace) {
       debugPrint('IAP: restore failed: $e');
       debugPrint('$stackTrace');
@@ -304,142 +233,424 @@ class IapService extends GetxService {
     }
   }
 
-  Future<void> _handlePurchaseUpdates(
-    List<PurchaseDetails> purchaseDetailsList,
-  ) async {
-    for (final purchase in purchaseDetailsList) {
-      debugPrint(
-        'IAP: purchase update product=${purchase.productID} '
-        'status=${purchase.status} id=${purchase.purchaseID}',
-      );
+  Future<void> _configureRevenueCat() async {
+    final platformApiKey = Platform.isAndroid
+        ? _revenueCatGoogleApiKey.trim()
+        : _revenueCatAppleApiKey.trim();
+    final apiKey = platformApiKey.isNotEmpty
+        ? platformApiKey
+        : _revenueCatApiKey.trim();
+    if (apiKey.isEmpty) {
+      debugPrint('RevenueCat: API key is not set for this platform.');
+      if (isMobileStore) {
+        errorMessage.value = 'Purchases are not configured for this app build.';
+      }
+      return;
+    }
 
-      switch (purchase.status) {
-        case PurchaseStatus.pending:
-          inFlightProductIds.add(purchase.productID);
-          errorMessage.value = 'Purchase is pending.';
-          break;
-        case PurchaseStatus.error:
-          debugPrint('IAP: purchase error: ${purchase.error}');
-          inFlightProductIds.remove(purchase.productID);
-          _pendingIntents.remove(purchase.productID);
-          errorMessage.value =
-              purchase.error?.message ?? 'Purchase failed. Please try again.';
-          await _completeIfNeeded(purchase);
-          break;
-        case PurchaseStatus.canceled:
-          inFlightProductIds.remove(purchase.productID);
-          _pendingIntents.remove(purchase.productID);
-          errorMessage.value = 'Purchase cancelled.';
-          await _completeIfNeeded(purchase);
-          break;
-        case PurchaseStatus.purchased:
-        case PurchaseStatus.restored:
-          await _verifyAndDeliver(purchase);
-          break;
+    try {
+      await rc.Purchases.setLogLevel(
+        kDebugMode ? rc.LogLevel.debug : rc.LogLevel.warn,
+      );
+      var alreadyConfigured = await rc.Purchases.isConfigured;
+      // A Flutter hot restart keeps the Android RevenueCat singleton alive.
+      // Reset it in debug mode so changes to dart-define/default API keys are
+      // applied without requiring the emulator process to be killed manually.
+      if (kDebugMode && Platform.isAndroid && alreadyConfigured) {
+        await rc.Purchases.close();
+        alreadyConfigured = await rc.Purchases.isConfigured;
+      }
+      if (!alreadyConfigured) {
+        final userId = (await _storageService.getUserId())?.trim();
+        final configuration = rc.PurchasesConfiguration(apiKey)
+          ..appUserID = userId == null || userId.isEmpty ? null : userId
+          ..diagnosticsEnabled = kDebugMode;
+        await rc.Purchases.configure(configuration);
+      }
+      _revenueCatConfigured = true;
+      rc.Purchases.addCustomerInfoUpdateListener(_customerInfoListener);
+      await identifyCurrentUser();
+      await refreshCustomerInfo();
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: configuration failed: $e');
+      debugPrint('$stackTrace');
+      _revenueCatConfigured = false;
+      if (isMobileStore) {
+        errorMessage.value =
+            'Purchases are currently unavailable. Please try again later.';
       }
     }
   }
 
-  Future<void> _verifyAndDeliver(PurchaseDetails purchase) async {
-    final intent =
-        _pendingIntents[purchase.productID] ??
-        _intentFromRestoredProduct(purchase.productID);
-    if (intent == null) {
-      debugPrint('IAP: no intent for product ${purchase.productID}');
-      await _completeIfNeeded(purchase);
-      inFlightProductIds.remove(purchase.productID);
-      return;
-    }
-
-    var effectiveIntent = intent;
-    if (effectiveIntent.kind == IapPurchaseKind.exam &&
-        (effectiveIntent.examId == null || effectiveIntent.examId!.isEmpty)) {
-      final restoredExamId = await _resolveExamIdForCode(
-        effectiveIntent.examCode,
-      );
-      if (restoredExamId == null) {
-        errorMessage.value =
-            'Unable to restore this exam purchase. Please refresh and try again.';
-        await _completeIfNeeded(purchase);
-        inFlightProductIds.remove(purchase.productID);
-        return;
-      }
-      effectiveIntent = _PendingIapIntent(
-        kind: effectiveIntent.kind,
-        productId: effectiveIntent.productId,
-        examId: restoredExamId,
-        examCode: effectiveIntent.examCode,
-      );
-    }
-
-    final payload = _purchasePayload(purchase, effectiveIntent);
+  Future<void> _loadRevenueCatProducts() async {
+    isLoadingProducts.value = true;
+    errorMessage.value = '';
     try {
-      final response = effectiveIntent.kind == IapPurchaseKind.exam
-          ? await _apiService.verifyAppleExamPurchase(
-              examId: effectiveIntent.examId ?? '',
-              purchasePayload: payload,
-            )
-          : await _apiService.verifyAppleProfessionalPurchase(
-              purchasePayload: payload,
-            );
-
-      debugPrint(
-        'IAP: backend verification result for ${purchase.productID}: '
-        '${response.success} ${response.message}',
-      );
-
-      if (!response.success) {
-        errorMessage.value =
-            response.message ?? 'Purchase verification failed.';
+      if (!_revenueCatConfigured) {
+        isStoreAvailable.value = false;
+        errorMessage.value = 'Purchases are not configured for this app build.';
         return;
       }
 
-      final paymentDetails = PaymentSuccessDetails.fromPayload(
-        response.data,
-        purchaseType: effectiveIntent.kind == IapPurchaseKind.exam
-            ? 'exam'
-            : 'plan',
-        fallbackAmount: 0,
-        fallbackTitle: effectiveIntent.kind == IapPurchaseKind.exam
+      _offerings = await rc.Purchases.getOfferings();
+      final packages = _offerings!.all.values
+          .expand((offering) => offering.availablePackages)
+          .toList(growable: false);
+      _revenueCatPackages
+        ..clear()
+        ..addEntries(
+          packages.map(
+            (package) => MapEntry(package.storeProduct.identifier, package),
+          ),
+        );
+      var subscriptionProducts = packages
+          .map((package) => package.storeProduct)
+          .where(
+            (product) =>
+                product.identifier == professionalSubscriptionProductId,
+          )
+          .toList(growable: false);
+      if (subscriptionProducts.isEmpty) {
+        subscriptionProducts = await rc.Purchases.getProducts(<String>[
+          professionalSubscriptionProductId,
+        ], productCategory: rc.ProductCategory.subscription);
+      }
+      final examProducts = await rc.Purchases.getProducts(
+        examIapProductIds.values.toList(growable: false),
+        productCategory: rc.ProductCategory.nonSubscription,
+      );
+      _revenueCatProducts
+        ..clear()
+        ..addEntries(
+          <rc.StoreProduct>[
+            ...subscriptionProducts,
+            ...examProducts,
+          ].map((product) => MapEntry(product.identifier, product)),
+        );
+      missingProductIds.assignAll(
+        allProductIds.difference(_revenueCatProducts.keys.toSet()),
+      );
+      isStoreAvailable.value = _revenueCatProducts.isNotEmpty;
+      if (!isStoreAvailable.value) {
+        errorMessage.value =
+            'No RevenueCat products are available. Configure products and a current offering in the RevenueCat dashboard.';
+      }
+      debugPrint(
+        'RevenueCat: products returned: '
+        '${_revenueCatProducts.values.map((p) => '${p.identifier}=${p.priceString}').join(', ')}',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: failed to load products: $e');
+      debugPrint('$stackTrace');
+      isStoreAvailable.value = false;
+      errorMessage.value =
+          'Purchases are currently unavailable. Please try again later.';
+    } finally {
+      isLoadingProducts.value = false;
+    }
+  }
+
+  Future<bool> _buyRevenueCatProduct({
+    required String productId,
+    required _PendingIapIntent intent,
+  }) async {
+    if (inFlightProductIds.contains(productId)) {
+      errorMessage.value = 'A purchase is already in progress.';
+      return false;
+    }
+    if (!_revenueCatConfigured || _revenueCatProducts[productId] == null) {
+      await loadProducts();
+    }
+    final product = _revenueCatProducts[productId];
+    if (!_revenueCatConfigured || product == null) {
+      errorMessage.value =
+          'Purchases are currently unavailable. Please try again later.';
+      return false;
+    }
+
+    _pendingIntents[productId] = intent;
+    inFlightProductIds.add(productId);
+    errorMessage.value = '';
+    try {
+      await identifyCurrentUser();
+      final package = _revenueCatPackages[productId];
+      final purchaseParams = package == null
+          ? rc.PurchaseParams.storeProduct(product)
+          : rc.PurchaseParams.package(package);
+      final result = await rc.Purchases.purchase(purchaseParams);
+      await _deliverRevenueCatPurchase(intent, product, result);
+      return true;
+    } on PlatformException catch (e) {
+      final code = rc.PurchasesErrorHelper.getErrorCode(e);
+      switch (code) {
+        case rc.PurchasesErrorCode.purchaseCancelledError:
+          errorMessage.value = 'Purchase cancelled.';
+          break;
+        case rc.PurchasesErrorCode.paymentPendingError:
+          errorMessage.value = 'Purchase is pending.';
+          break;
+        case rc.PurchasesErrorCode.productAlreadyPurchasedError:
+          final customerInfo = await rc.Purchases.restorePurchases();
+          await _applyRevenueCatAccess(customerInfo);
+          errorMessage.value = 'Purchase already owned and restored.';
+          break;
+        default:
+          debugPrint('RevenueCat: purchase failed ($code): ${e.message}');
+          errorMessage.value = 'Purchase failed. Please try again.';
+      }
+      return false;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: purchase failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value = 'Purchase failed. Please try again.';
+      return false;
+    } finally {
+      inFlightProductIds.remove(productId);
+      _pendingIntents.remove(productId);
+    }
+  }
+
+  Future<void> _deliverRevenueCatPurchase(
+    _PendingIapIntent intent,
+    rc.StoreProduct product,
+    rc.PurchaseResult result,
+  ) async {
+    _latestCustomerInfo = result.customerInfo;
+    final userController = Get.isRegistered<UserController>()
+        ? Get.find<UserController>()
+        : null;
+    if (userController != null) {
+      if (intent.kind == IapPurchaseKind.professional) {
+        await userController.applyProfessionalUpgrade(examId: intent.examId);
+      } else if (intent.examId != null && intent.examId!.isNotEmpty) {
+        await userController.addUnlockedExamId(intent.examId!);
+      }
+    }
+
+    final transactionId = result.storeTransaction.transactionIdentifier;
+    final payload = <String, dynamic>{
+      'provider': 'revenuecat',
+      'store': Platform.isIOS ? 'app_store' : 'google_play',
+      'productId': product.identifier,
+      'transactionId': transactionId,
+      'appUserId': result.customerInfo.originalAppUserId,
+      'activeEntitlements': result.customerInfo.entitlements.active.keys.toList(
+        growable: false,
+      ),
+    };
+    lastCompletedPurchase.value = IapCompletedPurchase(
+      kind: intent.kind,
+      productId: product.identifier,
+      examId: intent.examId,
+      payload: payload,
+      paymentDetails: PaymentSuccessDetails(
+        purchaseType: intent.kind == IapPurchaseKind.exam ? 'exam' : 'plan',
+        title: intent.kind == IapPurchaseKind.exam
             ? 'Exam Unlock'
             : 'Professional Plan',
-        fallbackProvider: 'apple',
-        fallbackPaymentMethodLabel: 'Apple In-App Purchase',
-        fallbackReceiptNumber: purchase.purchaseID,
-        fallbackTransactionReference: purchase.purchaseID,
-        fallbackPaidAt: DateTime.now(),
-        fallbackStatus: 'successful',
-      );
+        amountPaid: product.price,
+        currency: product.currencyCode,
+        billingCycleLabel: intent.kind == IapPurchaseKind.professional
+            ? '6 months'
+            : null,
+        paymentMethodLabel: Platform.isIOS
+            ? 'Apple In-App Purchase'
+            : 'Google Play In-App Purchase',
+        receiptNumber: transactionId,
+        transactionReference: transactionId,
+        paidAt: DateTime.tryParse(result.storeTransaction.purchaseDate),
+        provider: Platform.isIOS ? 'apple' : 'google',
+        status: 'successful',
+      ),
+    );
+  }
 
-      if (Get.isRegistered<UserController>()) {
-        final userController = Get.find<UserController>();
-        if (effectiveIntent.kind == IapPurchaseKind.exam &&
-            effectiveIntent.examId != null) {
-          await userController.addUnlockedExamId(effectiveIntent.examId!);
-        }
-        await userController.refreshProfile();
+  void _handleRevenueCatCustomerInfo(rc.CustomerInfo customerInfo) {
+    _latestCustomerInfo = customerInfo;
+    unawaited(_applyRevenueCatAccess(customerInfo));
+  }
+
+  Future<void> _applyRevenueCatAccess(rc.CustomerInfo customerInfo) async {
+    _latestCustomerInfo = customerInfo;
+    if (!Get.isRegistered<UserController>()) return;
+    final userController = Get.find<UserController>();
+    if (customerInfo.activeSubscriptions.contains(
+          professionalSubscriptionProductId,
+        ) ||
+        customerInfo.entitlements.active.containsKey(
+          professionalEntitlementId,
+        )) {
+      await userController.applyProfessionalUpgrade();
+    }
+
+    for (final entry in examIapProductIds.entries) {
+      final productOwned = customerInfo.allPurchasedProductIdentifiers.contains(
+        entry.value,
+      );
+      final entitlementOwned = customerInfo.entitlements.active.containsKey(
+        'exam_${entry.key.toLowerCase().replaceFirst('api_', '')}',
+      );
+      if (!productOwned && !entitlementOwned) continue;
+      final examId = await _resolveExamIdForCode(entry.key);
+      if (examId != null) {
+        await userController.addUnlockedExamId(examId);
       }
+    }
+  }
 
-      debugPrint('IAP: unlock result success for ${purchase.productID}');
-      lastCompletedPurchase.value = IapCompletedPurchase(
-        kind: effectiveIntent.kind,
-        productId: purchase.productID,
-        examId: effectiveIntent.examId,
-        payload: response.data,
-        paymentDetails: paymentDetails,
-      );
-      errorMessage.value = purchase.status == PurchaseStatus.restored
-          ? 'Purchases restored successfully.'
-          : '';
-      await _completeIfNeeded(purchase);
+  Future<void> identifyCurrentUser() async {
+    if (!_revenueCatConfigured) return;
+    final userId = (await _storageService.getUserId())?.trim() ?? '';
+    if (userId.isEmpty) return;
+    try {
+      if (await rc.Purchases.appUserID != userId) {
+        final result = await rc.Purchases.logIn(userId);
+        _latestCustomerInfo = result.customerInfo;
+        await _applyRevenueCatAccess(result.customerInfo);
+      }
+    } catch (e) {
+      debugPrint('RevenueCat: failed to identify user: $e');
+    }
+  }
+
+  Future<void> resetRevenueCatUser() async {
+    if (!_revenueCatConfigured) return;
+    try {
+      if (!await rc.Purchases.isAnonymous) {
+        _latestCustomerInfo = await rc.Purchases.logOut();
+      }
+    } catch (e) {
+      debugPrint('RevenueCat: logout failed: $e');
+    }
+  }
+
+  Future<rc.CustomerInfo?> refreshCustomerInfo() async {
+    if (!_revenueCatConfigured) return null;
+    try {
+      final customerInfo = await rc.Purchases.getCustomerInfo();
+      await _applyRevenueCatAccess(customerInfo);
+      return customerInfo;
+    } on PlatformException catch (e) {
+      debugPrint('RevenueCat: customer info failed: ${e.message}');
+      errorMessage.value =
+          'Unable to refresh subscription status. Please try again.';
+      return null;
     } catch (e, stackTrace) {
-      debugPrint('IAP: verification failed for ${purchase.productID}: $e');
+      debugPrint('RevenueCat: customer info failed: $e');
       debugPrint('$stackTrace');
       errorMessage.value =
-          'Purchase verification failed. Please try again later.';
-    } finally {
-      inFlightProductIds.remove(purchase.productID);
-      _pendingIntents.remove(purchase.productID);
+          'Unable to refresh subscription status. Please try again.';
+      return null;
+    }
+  }
+
+  Future<bool> presentProfessionalPaywall({String? selectedExamId}) async {
+    if (!_revenueCatConfigured) {
+      errorMessage.value = 'Purchases are not configured for this app build.';
+      return false;
+    }
+
+    errorMessage.value = '';
+    try {
+      await identifyCurrentUser();
+      _offerings ??= await rc.Purchases.getOfferings();
+      final offering = _offerings?.current;
+      if (offering == null || offering.availablePackages.isEmpty) {
+        errorMessage.value =
+            'No current RevenueCat offering is configured. Add products and packages in the RevenueCat dashboard.';
+        return false;
+      }
+
+      final result = await rc_ui.RevenueCatUI.presentPaywallIfNeeded(
+        professionalEntitlementId,
+        offering: offering,
+        displayCloseButton: true,
+      );
+      final customerInfo = await refreshCustomerInfo();
+      final hasAccess =
+          customerInfo?.entitlements.active.containsKey(
+            professionalEntitlementId,
+          ) ??
+          false;
+
+      switch (result) {
+        case rc_ui.PaywallResult.purchased:
+        case rc_ui.PaywallResult.restored:
+          if (!hasAccess) {
+            errorMessage.value =
+                'The purchase completed, but access is still syncing. Please refresh in a moment.';
+            return false;
+          }
+          if (Get.isRegistered<UserController>()) {
+            await Get.find<UserController>().applyProfessionalUpgrade(
+              examId: selectedExamId,
+            );
+          }
+          lastCompletedPurchase.value = IapCompletedPurchase(
+            kind: IapPurchaseKind.professional,
+            productId: professionalSubscriptionProductId,
+            examId: selectedExamId,
+            payload: <String, dynamic>{
+              'provider': 'revenuecat',
+              'appUserId': customerInfo?.originalAppUserId,
+              'activeEntitlements': customerInfo?.entitlements.active.keys
+                  .toList(growable: false),
+            },
+          );
+          return true;
+        case rc_ui.PaywallResult.notPresented:
+          return hasAccess;
+        case rc_ui.PaywallResult.cancelled:
+          errorMessage.value = 'Purchase cancelled.';
+          return false;
+        case rc_ui.PaywallResult.error:
+          errorMessage.value =
+              'The paywall could not complete the purchase. Please try again.';
+          return false;
+      }
+    } on PlatformException catch (e) {
+      debugPrint('RevenueCat: paywall failed: ${e.message}');
+      errorMessage.value = 'Unable to open the subscription paywall.';
+      return false;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: paywall failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value = 'Unable to open the subscription paywall.';
+      return false;
+    }
+  }
+
+  Future<bool> presentCustomerCenter() async {
+    if (!_revenueCatConfigured) {
+      errorMessage.value = 'Purchases are not configured for this app build.';
+      return false;
+    }
+
+    errorMessage.value = '';
+    try {
+      await identifyCurrentUser();
+      await rc_ui.RevenueCatUI.presentCustomerCenter(
+        onRestoreCompleted: (customerInfo) {
+          unawaited(_applyRevenueCatAccess(customerInfo));
+        },
+        onRestoreFailed: (error) {
+          debugPrint('RevenueCat: Customer Center restore failed: $error');
+          errorMessage.value = 'Restore failed. Please try again.';
+        },
+      );
+      await refreshCustomerInfo();
+      return true;
+    } on PlatformException catch (e) {
+      debugPrint('RevenueCat: Customer Center failed: ${e.message}');
+      errorMessage.value =
+          'Unable to open subscription management. Please try again.';
+      return false;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: Customer Center failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'Unable to open subscription management. Please try again.';
+      return false;
     }
   }
 
@@ -456,60 +667,5 @@ class IapService extends GetxService {
     }
     debugPrint('IAP: no exam found for restored product code $examCode');
     return null;
-  }
-
-  _PendingIapIntent? _intentFromRestoredProduct(String productId) {
-    if (productId == professionalSubscriptionProductId) {
-      return const _PendingIapIntent(
-        kind: IapPurchaseKind.professional,
-        productId: professionalSubscriptionProductId,
-      );
-    }
-
-    String? examCode;
-    for (final entry in examIapProductIds.entries) {
-      if (entry.value == productId) {
-        examCode = entry.key;
-        break;
-      }
-    }
-    if (examCode == null) return null;
-
-    return _PendingIapIntent(
-      kind: IapPurchaseKind.exam,
-      productId: productId,
-      examCode: examCode,
-    );
-  }
-
-  Map<String, dynamic> _purchasePayload(
-    PurchaseDetails purchase,
-    _PendingIapIntent intent,
-  ) {
-    return <String, dynamic>{
-      'productId': purchase.productID,
-      'purchaseID': purchase.purchaseID,
-      'transactionId': purchase.purchaseID,
-      'purchaseStatus': purchase.status.name,
-      'examId': intent.examId,
-      'examCode': intent.examCode,
-      'verificationData': {
-        'serverVerificationData':
-            purchase.verificationData.serverVerificationData,
-        'localVerificationData':
-            purchase.verificationData.localVerificationData,
-        'source': purchase.verificationData.source,
-      },
-    };
-  }
-
-  Future<void> _completeIfNeeded(PurchaseDetails purchase) async {
-    if (!purchase.pendingCompletePurchase) return;
-    try {
-      await _iap.completePurchase(purchase);
-      debugPrint('IAP: completed transaction for ${purchase.productID}');
-    } catch (e) {
-      debugPrint('IAP: completePurchase failed for ${purchase.productID}: $e');
-    }
   }
 }

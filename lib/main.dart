@@ -19,7 +19,7 @@ final _router = getRouter();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (!Platform.isIOS) {
+  if (!Platform.isIOS && !Platform.isAndroid) {
     Stripe.publishableKey = AppConstants.stripePublishableKey;
     // Return URL scheme for 3DS / redirect-based payment methods.
     Stripe.urlScheme = 'flutterstripe';

@@ -2,6 +2,8 @@
 
 import 'api_service.dart';
 import 'storage_service.dart';
+import 'package:get/get.dart';
+import 'iap_service.dart';
 
 class AuthService {
   final ApiService _apiService = ApiService();
@@ -14,6 +16,9 @@ class AuthService {
 
   /// Logout user (design only - clears local storage)
   Future<void> logout() async {
+    if (Get.isRegistered<IapService>()) {
+      await Get.find<IapService>().resetRevenueCatUser();
+    }
     try {
       await _apiService.logout();
     } catch (_) {

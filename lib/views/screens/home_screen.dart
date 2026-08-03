@@ -119,6 +119,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_sessionRedirected) return;
     _sessionRedirected = true;
 
+    if (Get.isRegistered<IapService>()) {
+      await Get.find<IapService>().resetRevenueCatUser();
+    }
     await _storageService.logout();
     await _userController.clearState();
     _homeController.clearState();
@@ -341,6 +344,26 @@ class HomeDashboard extends StatelessWidget {
   }
 
   Future<void> _unlockExam(BuildContext context, ExamModel exam) async {
+    if (Platform.isAndroid) {
+      final iapService = Get.isRegistered<IapService>()
+          ? Get.find<IapService>()
+          : null;
+      if (iapService == null || !iapService.isStoreAvailable.value) {
+        ErrorHandler.showSnackBar(
+          'Purchases are currently unavailable. Please try again later.',
+          isError: true,
+          context: context,
+        );
+        return;
+      }
+      await iapService.buyExamUnlock(
+        examId: exam.id,
+        examCode: exam.code,
+        examName: exam.name,
+      );
+      return;
+    }
+
     final examId = exam.id.trim();
     if (examId.isEmpty) {
       ErrorHandler.showSnackBar(
@@ -743,7 +766,8 @@ class HomeDashboard extends StatelessWidget {
               }
               final orderedItems = [...unlockedItems, ...lockedItems];
               final IapService? iapService =
-                  Platform.isIOS && Get.isRegistered<IapService>()
+                  (Platform.isIOS || Platform.isAndroid) &&
+                      Get.isRegistered<IapService>()
                   ? Get.find<IapService>()
                   : null;
 
@@ -823,7 +847,7 @@ class HomeDashboard extends StatelessWidget {
                           return;
                         }
 
-                        if (Platform.isIOS) {
+                        if (Platform.isIOS || Platform.isAndroid) {
                           if (iapService == null ||
                               !iapService.isStoreAvailable.value) {
                             ErrorHandler.showSnackBar(

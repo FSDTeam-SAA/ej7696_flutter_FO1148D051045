@@ -13,11 +13,22 @@ PODS:
     - Flutter
   - image_picker_ios (0.0.1):
     - Flutter
-  - in_app_purchase_storekit (0.0.1):
+  - purchases_flutter (10.5.0):
     - Flutter
-    - FlutterMacOS
+    - PurchasesHybridCommon (= 18.25.0)
+  - purchases_ui_flutter (10.5.0):
+    - Flutter
+    - PurchasesHybridCommonUI (= 18.25.0)
+  - PurchasesHybridCommon (18.25.0):
+    - RevenueCat (= 5.81.2)
+  - PurchasesHybridCommonUI (18.25.0):
+    - PurchasesHybridCommon (= 18.25.0)
+    - RevenueCatUI (= 5.81.2)
   - record_ios (1.2.0):
     - Flutter
+  - RevenueCat (5.81.2)
+  - RevenueCatUI (5.81.2):
+    - RevenueCat (= 5.81.2)
   - share_plus (0.0.1):
     - Flutter
   - shared_preferences_foundation (0.0.1):
@@ -94,7 +105,8 @@ DEPENDENCIES:
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - flutter_tts (from `.symlinks/plugins/flutter_tts/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
-  - in_app_purchase_storekit (from `.symlinks/plugins/in_app_purchase_storekit/darwin`)
+  - purchases_flutter (from `.symlinks/plugins/purchases_flutter/ios`)
+  - purchases_ui_flutter (from `.symlinks/plugins/purchases_ui_flutter/ios`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -107,6 +119,10 @@ SPEC REPOS:
   trunk:
     - CwlCatchException
     - CwlCatchExceptionSupport
+    - PurchasesHybridCommon
+    - PurchasesHybridCommonUI
+    - RevenueCat
+    - RevenueCatUI
     - Stripe
     - StripeApplePay
     - StripeCore
@@ -129,8 +145,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_tts/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
-  in_app_purchase_storekit:
-    :path: ".symlinks/plugins/in_app_purchase_storekit/darwin"
+  purchases_flutter:
+    :path: ".symlinks/plugins/purchases_flutter/ios"
+  purchases_ui_flutter:
+    :path: ".symlinks/plugins/purchases_ui_flutter/ios"
   record_ios:
     :path: ".symlinks/plugins/record_ios/ios"
   share_plus:
@@ -155,8 +173,13 @@ SPEC CHECKSUMS:
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
   flutter_tts: b88dbc8655d3dc961bc4a796e4e16a4cc1795833
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
-  in_app_purchase_storekit: 22cca7d08eebca9babdf4d07d0baccb73325d3c8
+  purchases_flutter: 612ed1b8acf4b2bb197430c3db4b0e644c6ad819
+  purchases_ui_flutter: 21c75ac06037d311e10b4137921efa1d7c42985f
+  PurchasesHybridCommon: 3ecbd072abef4504ca68863319b27a5266678302
+  PurchasesHybridCommonUI: 1b641ef798226ef411194b57ef1aa5b02eeae9df
   record_ios: 412daca2350b228e698fffcd08f1f94ceb1e3844
+  RevenueCat: 20ef951452a36a81f8ade921719c85c4e01d08a9
+  RevenueCatUI: ead343e12f6513d9cc530faa77760ee858d4308e
   share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   speech_to_text: 3b313d98516d3d0406cea424782ec25470c59d19
@@ -172,6 +195,6 @@ SPEC CHECKSUMS:
   syncfusion_flutter_pdfviewer: dfb514751af5b6b71e504c9c04a2e4ddbc1dd895
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 
-PODFILE CHECKSUM: 251cb053df7158f337c0712f2ab29f4e0fa474ce
+PODFILE CHECKSUM: 53a6aebc29ccee84c41f92f409fc20cd4ca011f1
 
 COCOAPODS: 1.16.2

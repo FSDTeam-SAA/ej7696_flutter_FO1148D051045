@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../controllers/user_controller.dart';
 import '../../core/error/error_handler.dart';
@@ -19,6 +18,7 @@ import '../../services/exam_service.dart';
 import '../../services/iap_service.dart';
 import '../../services/storage_service.dart';
 import '../../utils/app_constants.dart';
+import '../../utils/legal_link_launcher.dart';
 import '../widgets/app_shimmer.dart';
 import '../widgets/gradient_background.dart';
 import '../widgets/unlock_exam_dialog.dart';
@@ -35,8 +35,9 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
   static const String _proPlanDuration = '6 months';
   static const String _proPlanBenefitsText =
       'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
-  static const String _proPlanRenewalText =
-      'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
+  String get _proPlanRenewalText => Platform.isAndroid
+      ? 'This subscription auto-renews every 6 months unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
+      : 'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
   static const String _proPlanAgreementText =
       'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
@@ -253,17 +254,17 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     return message.contains('resource purchase id already exists');
   }
 
-  Future<void> _openExternalUrl(String url) async {
-    final uri = Uri.parse(url);
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      ErrorHandler.showSnackBar(
-        'Unable to open link. Please try again.',
-        isError: true,
-        context: context,
-      );
-    }
-  }
+  Future<void> _openPrivacyPolicy() => openLegalLink(
+    context,
+    AppConstants.privacyPolicyUrl,
+    fallbackRoute: '/privacy-policy',
+  );
+
+  Future<void> _openTermsOfUse() => openLegalLink(
+    context,
+    AppConstants.termsOfUseUrl,
+    fallbackRoute: '/terms-of-service',
+  );
 
   Future<void> _completeProfessionalUpgradeSuccess(
     ExamModel exam, {
@@ -434,14 +435,15 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
         ? professionalPlan?.referralOffer
         : null;
     final IapService? iapService =
-        Platform.isIOS && Get.isRegistered<IapService>()
+        (Platform.isIOS || Platform.isAndroid) && Get.isRegistered<IapService>()
         ? Get.find<IapService>()
         : null;
+    final bool isMobileStore = Platform.isIOS || Platform.isAndroid;
     final bool canUseIap =
-        !Platform.isIOS ||
+        !isMobileStore ||
         (iapService != null &&
             iapService.isStoreAvailable.value &&
-            iapService.professionalProduct != null);
+            iapService.hasProfessionalProduct);
 
     if (referralOffer != null) {
       children.add(_buildReferralReadyBanner(referralOffer));
@@ -467,7 +469,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
             : null,
       ),
     );
-    if (Platform.isIOS && Get.isRegistered<IapService>()) {
+    if (isMobileStore && Get.isRegistered<IapService>()) {
       final iapService = Get.find<IapService>();
       children.add(const SizedBox(height: 14));
       children.add(
@@ -544,11 +546,11 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
         runSpacing: 4,
         children: [
           TextButton(
-            onPressed: () => _openExternalUrl(AppConstants.privacyPolicyUrl),
+            onPressed: _openPrivacyPolicy,
             child: const Text('Privacy Policy'),
           ),
           TextButton(
-            onPressed: () => _openExternalUrl(AppConstants.termsOfUseUrl),
+            onPressed: _openTermsOfUse,
             child: const Text('Terms of Use'),
           ),
         ],
@@ -633,7 +635,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       return;
     }
 
-    if (Platform.isIOS) {
+    if (Platform.isIOS || Platform.isAndroid) {
       final iapService = Get.isRegistered<IapService>()
           ? Get.find<IapService>()
           : null;
@@ -1090,7 +1092,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     final bool isStarter = planTier == PlanTier.starter;
     final plan = professionalPlan;
     final IapService? iapService =
-        Platform.isIOS && Get.isRegistered<IapService>()
+        (Platform.isIOS || Platform.isAndroid) && Get.isRegistered<IapService>()
         ? Get.find<IapService>()
         : null;
     final String? appStorePlanPrice = iapService?.professionalPrice;
@@ -1279,7 +1281,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               _proPlanRenewalText,
               style: TextStyle(
                 fontSize: 13,
@@ -1302,12 +1304,11 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
               runSpacing: 0,
               children: [
                 TextButton(
-                  onPressed: () => _openExternalUrl(AppConstants.termsOfUseUrl),
+                  onPressed: _openTermsOfUse,
                   child: const Text('Terms of Use'),
                 ),
                 TextButton(
-                  onPressed: () =>
-                      _openExternalUrl(AppConstants.privacyPolicyUrl),
+                  onPressed: _openPrivacyPolicy,
                   child: const Text('Privacy Policy'),
                 ),
               ],
@@ -1371,7 +1372,8 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
                   elevation: 0,
                 ),
                 child: Text(
-                  Platform.isIOS && appStorePlanPrice == null
+                  (Platform.isIOS || Platform.isAndroid) &&
+                          appStorePlanPrice == null
                       ? 'Purchases unavailable'
                       : 'Subscribe',
                   style: const TextStyle(
