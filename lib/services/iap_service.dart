@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,13 +5,38 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:purchases_flutter/purchases_flutter.dart' as rc;
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart' as rc_ui;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/user_controller.dart';
 import '../models/payment_success_details.dart';
-import 'exam_service.dart';
+import 'api_service.dart';
 import 'storage_service.dart';
 
 const Map<String, String> examIapProductIds = {
+  'API_1184': 'com.inspectorspath.exam.api1184.sixmonth',
+  'API_510': 'com.inspectorspath.exam.api510.sixmonth',
+  'API_570': 'com.inspectorspath.exam.api570.sixmonth',
+  'API_653': 'com.inspectorspath.exam.api653.sixmonth',
+  'API_936': 'com.inspectorspath.exam.api936.sixmonth',
+  'API_1169': 'com.inspectorspath.exam.api1169.sixmonth',
+  'API_SIEE': 'com.inspectorspath.exam.siee.sixmonth',
+  'API_SIFE': 'com.inspectorspath.exam.sife.sixmonth',
+  'API_SIRE': 'com.inspectorspath.exam.sire.sixmonth',
+};
+
+const Map<String, String> examAndroidBasePlanIds = {
+  'API_1184': 'api1184sixmonth',
+  'API_510': 'api510sixmonth',
+  'API_570': 'api570sixmonth',
+  'API_653': 'api653sixmonth',
+  'API_936': 'api936sixmonth',
+  'API_1169': 'api1169sixmonth',
+  'API_SIEE': 'sieesixmonth',
+  'API_SIFE': 'sifesixmonth',
+  'API_SIRE': 'siresixmonth',
+};
+
+const Map<String, String> legacyExamIapProductIds = {
   'API_1184': 'com.inspectorspath.exam.api1184.unlock',
   'API_510': 'com.inspectorspath.exam.api510.unlock',
   'API_570': 'com.inspectorspath.exam.api570.unlock',
@@ -24,6 +48,14 @@ const Map<String, String> examIapProductIds = {
   'API_SIRE': 'com.inspectorspath.exam.sire.unlock',
 };
 
+String examSubscriptionProductId(String code, {bool? isAndroid}) {
+  final baseId = examIapProductIds[code] ?? '';
+  if (baseId.isEmpty) return '';
+  if (!(isAndroid ?? Platform.isAndroid)) return baseId;
+  final basePlanId = examAndroidBasePlanIds[code] ?? '';
+  return basePlanId.isEmpty ? '' : '$baseId:$basePlanId';
+}
+
 const String professionalSubscriptionId = 'six_month_subscriptions';
 const String professionalSubscriptionBasePlanId = 'six-month';
 const String androidProfessionalSubscriptionProductId =
@@ -31,6 +63,99 @@ const String androidProfessionalSubscriptionProductId =
 const String appleProfessionalSubscriptionProductId =
     professionalSubscriptionId;
 const String professionalEntitlementId = 'professional_access';
+
+@visibleForTesting
+Set<String> ownedExamCodes({
+  required Iterable<String> purchasedProductIds,
+  required Iterable<String> activeEntitlementIds,
+}) {
+  final purchasedIds = purchasedProductIds.toSet();
+  final entitlementIds = activeEntitlementIds.toSet();
+  return examIapProductIds.entries
+      .where((entry) {
+        final entitlementId =
+            'exam_${entry.key.toLowerCase().replaceFirst('api_', '')}';
+        final androidProductId = examSubscriptionProductId(
+          entry.key,
+          isAndroid: true,
+        );
+        return purchasedIds.contains(entry.value) ||
+            purchasedIds.contains(androidProductId) ||
+            purchasedIds.contains(legacyExamIapProductIds[entry.key]) ||
+            entitlementIds.contains(entitlementId);
+      })
+      .map((entry) => entry.key)
+      .toSet();
+}
+
+@visibleForTesting
+bool refundRequestWasSubmitted(String status) =>
+    status.trim().toLowerCase().replaceAll(RegExp(r'[^a-z]'), '') == 'success';
+
+@visibleForTesting
+bool revenueCatSyncConfirmsProduct({
+  required String? productId,
+  required String? examId,
+  required Map<String, dynamic>? data,
+}) {
+  final normalizedProductId = productId?.trim() ?? '';
+  if (normalizedProductId.isEmpty) return true;
+  if (data == null) return false;
+
+  final isSubscription = <String>{
+    appleProfessionalSubscriptionProductId,
+    androidProfessionalSubscriptionProductId,
+  }.contains(normalizedProductId);
+  if (isSubscription) {
+    final selectedExam = data['selectedExam'];
+    return data['subscriptionTier']?.toString().trim().toLowerCase() ==
+            'professional' &&
+        data['hasProfessionalAccess'] == true &&
+        examId?.trim().isNotEmpty == true &&
+        selectedExam is Map &&
+        selectedExam['unlocked'] == true &&
+        selectedExam['examId']?.toString() == examId;
+  }
+
+  final isExamProduct = examIapProductIds.entries.any(
+    (entry) =>
+        normalizedProductId == entry.value ||
+        normalizedProductId ==
+            examSubscriptionProductId(entry.key, isAndroid: true),
+  );
+  if (!isExamProduct) return false;
+  final normalizedExamId = examId?.trim() ?? '';
+  if (normalizedExamId.isEmpty) return false;
+
+  final selectedExam = data['selectedExam'];
+  if (selectedExam is Map &&
+      selectedExam['unlocked'] == true &&
+      selectedExam['examId']?.toString() == normalizedExamId) {
+    return true;
+  }
+  return false;
+}
+
+@visibleForTesting
+bool revenueCatCustomerHasActiveProduct({
+  required String productId,
+  required Iterable<String> activeSubscriptionIds,
+  required Iterable<String> activeEntitlementProductIds,
+}) {
+  final normalizedProductId = productId.trim();
+  if (normalizedProductId.isEmpty) return false;
+  return activeSubscriptionIds.contains(normalizedProductId) ||
+      activeEntitlementProductIds.contains(normalizedProductId);
+}
+
+({bool subscriptionRequired, bool examPurchaseRequired})
+mobileCheckoutRequirements({
+  required bool isProfessionalActive,
+  required bool examOwned,
+}) => (
+  subscriptionRequired: !isProfessionalActive,
+  examPurchaseRequired: isProfessionalActive && !examOwned,
+);
 
 enum IapPurchaseKind { exam, professional }
 
@@ -76,7 +201,7 @@ class IapService extends GetxService {
     defaultValue: 'appl_HYHXtAdEYRVNrYzLmMQuqWLOOcc',
   );
 
-  final ExamService _examService = ExamService();
+  final ApiService _apiService = ApiService();
   final StorageService _storageService = StorageService();
 
   final Map<String, _PendingIapIntent> _pendingIntents = {};
@@ -85,6 +210,9 @@ class IapService extends GetxService {
   rc.Offerings? _offerings;
   rc.CustomerInfo? _latestCustomerInfo;
   bool _revenueCatConfigured = false;
+  Map<String, dynamic>? _lastBackendSyncData;
+  Future<bool>? _reconciliationInFlight;
+  Future<bool>? _refundRequestUpdateInFlight;
   late final rc.CustomerInfoUpdateListener _customerInfoListener =
       _handleRevenueCatCustomerInfo;
 
@@ -112,7 +240,7 @@ class IapService extends GetxService {
       false;
 
   Set<String> get allProductIds => <String>{
-    ...examIapProductIds.values,
+    ...examIapProductIds.keys.map(examSubscriptionProductId),
     professionalSubscriptionProductId,
   };
 
@@ -142,7 +270,7 @@ class IapService extends GetxService {
 
   String? priceForExam({required String? examCode, required String? examName}) {
     final code = resolveExamCode(code: examCode, name: examName);
-    final productId = code == null ? null : examIapProductIds[code];
+    final productId = code == null ? null : examSubscriptionProductId(code);
     return productId == null
         ? null
         : _revenueCatProducts[productId]?.priceString;
@@ -190,7 +318,7 @@ class IapService extends GetxService {
     final resolvedCode = resolveExamCode(code: examCode, name: examName);
     final productId = resolvedCode == null
         ? null
-        : examIapProductIds[resolvedCode];
+        : examSubscriptionProductId(resolvedCode);
     if (productId == null) {
       errorMessage.value = 'Purchase is not available for this exam.';
       return false;
@@ -203,9 +331,15 @@ class IapService extends GetxService {
     return _buyRevenueCatProduct(productId: productId, intent: intent);
   }
 
-  Future<bool> buyProfessionalSubscription({String? selectedExamId}) async {
+  Future<bool> buyProfessionalSubscription({required String examId}) async {
     if (!isMobileStore) return false;
-    return presentProfessionalPaywall(selectedExamId: selectedExamId);
+    final productId = professionalSubscriptionProductId;
+    final intent = _PendingIapIntent(
+      kind: IapPurchaseKind.professional,
+      productId: productId,
+      examId: examId,
+    );
+    return _buyRevenueCatProduct(productId: productId, intent: intent);
   }
 
   Future<void> restorePurchases() async {
@@ -219,10 +353,10 @@ class IapService extends GetxService {
         errorMessage.value = 'Purchases are not configured for this app build.';
         return;
       }
-      await identifyCurrentUser();
-      final customerInfo = await rc.Purchases.restorePurchases();
-      await _applyRevenueCatAccess(customerInfo);
-      errorMessage.value = 'Purchases restored successfully.';
+      final backendSynced = await reconcilePurchases(restoreFromStore: true);
+      if (backendSynced) {
+        errorMessage.value = 'Purchases restored successfully.';
+      }
     } catch (e, stackTrace) {
       debugPrint('IAP: restore failed: $e');
       debugPrint('$stackTrace');
@@ -269,8 +403,6 @@ class IapService extends GetxService {
       }
       _revenueCatConfigured = true;
       rc.Purchases.addCustomerInfoUpdateListener(_customerInfoListener);
-      await identifyCurrentUser();
-      await refreshCustomerInfo();
     } catch (e, stackTrace) {
       debugPrint('RevenueCat: configuration failed: $e');
       debugPrint('$stackTrace');
@@ -316,8 +448,10 @@ class IapService extends GetxService {
         ], productCategory: rc.ProductCategory.subscription);
       }
       final examProducts = await rc.Purchases.getProducts(
-        examIapProductIds.values.toList(growable: false),
-        productCategory: rc.ProductCategory.nonSubscription,
+        examIapProductIds.keys
+            .map(examSubscriptionProductId)
+            .toList(growable: false),
+        productCategory: rc.ProductCategory.subscription,
       );
       _revenueCatProducts
         ..clear()
@@ -372,28 +506,50 @@ class IapService extends GetxService {
     inFlightProductIds.add(productId);
     errorMessage.value = '';
     try {
-      await identifyCurrentUser();
+      final identified = await _identifyRevenueCatUserForPurchase();
+      if (!identified) return false;
       final package = _revenueCatPackages[productId];
+      debugPrint(
+        'RevenueCat: starting purchase '
+        'product=$productId package=${package?.identifier ?? 'store_product'}',
+      );
       final purchaseParams = package == null
           ? rc.PurchaseParams.storeProduct(product)
           : rc.PurchaseParams.package(package);
       final result = await rc.Purchases.purchase(purchaseParams);
-      await _deliverRevenueCatPurchase(intent, product, result);
-      return true;
+      return _deliverRevenueCatPurchase(intent, product, result);
     } on PlatformException catch (e) {
       final code = rc.PurchasesErrorHelper.getErrorCode(e);
+      debugPrint(
+        'RevenueCat: purchase exception '
+        'code=$code platformCode=${e.code} message=${e.message} '
+        'details=${e.details}',
+      );
       switch (code) {
         case rc.PurchasesErrorCode.purchaseCancelledError:
+          if (Platform.isIOS) {
+            final restored = await _recoverCancelledIosPurchase(
+              productId: productId,
+              intent: intent,
+            );
+            if (restored) return true;
+            if (errorMessage.value.isNotEmpty) break;
+          }
           errorMessage.value = 'Purchase cancelled.';
           break;
         case rc.PurchasesErrorCode.paymentPendingError:
           errorMessage.value = 'Purchase is pending.';
           break;
         case rc.PurchasesErrorCode.productAlreadyPurchasedError:
-          final customerInfo = await rc.Purchases.restorePurchases();
-          await _applyRevenueCatAccess(customerInfo);
-          errorMessage.value = 'Purchase already owned and restored.';
-          break;
+          final backendSynced = await reconcilePurchases(
+            restoreFromStore: true,
+            examId: intent.examId,
+            productId: productId,
+          );
+          errorMessage.value = backendSynced
+              ? 'Purchase already owned and restored.'
+              : 'Purchase is owned, but access is still syncing. Please try Restore Purchase again.';
+          return backendSynced;
         default:
           debugPrint('RevenueCat: purchase failed ($code): ${e.message}');
           errorMessage.value = 'Purchase failed. Please try again.';
@@ -410,24 +566,72 @@ class IapService extends GetxService {
     }
   }
 
-  Future<void> _deliverRevenueCatPurchase(
+  Future<bool> _recoverCancelledIosPurchase({
+    required String productId,
+    required _PendingIapIntent intent,
+  }) async {
+    debugPrint(
+      'RevenueCat: iOS reported a cancelled purchase; checking the App Store receipt for an existing active purchase.',
+    );
+    try {
+      final customerInfo = await rc.Purchases.restorePurchases();
+      _latestCustomerInfo = customerInfo;
+      final hasActiveProduct = revenueCatCustomerHasActiveProduct(
+        productId: productId,
+        activeSubscriptionIds: customerInfo.activeSubscriptions,
+        activeEntitlementProductIds: customerInfo.entitlements.active.values
+            .map((entitlement) => entitlement.productIdentifier),
+      );
+      if (!hasActiveProduct) {
+        debugPrint(
+          'RevenueCat: cancelled purchase recovery found no active product for $productId.',
+        );
+        return false;
+      }
+
+      final backendSynced = await _syncBackendAccess(
+        examId: intent.examId,
+        productId: productId,
+      );
+      if (!backendSynced) return false;
+      if (Get.isRegistered<UserController>()) {
+        await Get.find<UserController>().refreshProfile();
+      }
+      errorMessage.value = 'Existing purchase restored successfully.';
+      debugPrint(
+        'RevenueCat: recovered active App Store purchase for $productId.',
+      );
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: cancelled purchase recovery failed: $e');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  Future<bool> _deliverRevenueCatPurchase(
     _PendingIapIntent intent,
     rc.StoreProduct product,
     rc.PurchaseResult result,
   ) async {
     _latestCustomerInfo = result.customerInfo;
+    final backendSynced = await _syncBackendAccess(
+      examId: intent.examId,
+      productId: product.identifier,
+    );
     final userController = Get.isRegistered<UserController>()
         ? Get.find<UserController>()
         : null;
-    if (userController != null) {
-      if (intent.kind == IapPurchaseKind.professional) {
-        await userController.applyProfessionalUpgrade(examId: intent.examId);
-      } else if (intent.examId != null && intent.examId!.isNotEmpty) {
-        await userController.addUnlockedExamId(intent.examId!);
-      }
+    if (backendSynced && userController != null) {
+      // The backend is authoritative for each exam's independent expiry.
+      await userController.refreshProfile();
     }
 
     final transactionId = result.storeTransaction.transactionIdentifier;
+    final selectedExam = _lastBackendSyncData?['selectedExam'];
+    final selectedExamData = selectedExam is Map
+        ? Map<String, dynamic>.from(selectedExam)
+        : const <String, dynamic>{};
     final payload = <String, dynamic>{
       'provider': 'revenuecat',
       'store': Platform.isIOS ? 'app_store' : 'google_play',
@@ -437,6 +641,7 @@ class IapService extends GetxService {
       'activeEntitlements': result.customerInfo.entitlements.active.keys.toList(
         growable: false,
       ),
+      'backendSynced': backendSynced,
     };
     lastCompletedPurchase.value = IapCompletedPurchase(
       kind: intent.kind,
@@ -453,63 +658,208 @@ class IapService extends GetxService {
         billingCycleLabel: intent.kind == IapPurchaseKind.professional
             ? '6 months'
             : null,
+        unlockDurationLabel: '6 months',
+        expiresAt: DateTime.tryParse(
+          selectedExamData['expiresAt']?.toString() ?? '',
+        ),
+        expiryMonths: 6,
         paymentMethodLabel: Platform.isIOS
             ? 'Apple In-App Purchase'
             : 'Google Play In-App Purchase',
         receiptNumber: transactionId,
         transactionReference: transactionId,
         paidAt: DateTime.tryParse(result.storeTransaction.purchaseDate),
+        subscriptionStartedAt: DateTime.tryParse(
+          selectedExamData['startedAt']?.toString() ?? '',
+        ),
         provider: Platform.isIOS ? 'apple' : 'google',
         status: 'successful',
       ),
     );
+    return backendSynced;
   }
 
   void _handleRevenueCatCustomerInfo(rc.CustomerInfo customerInfo) {
+    // CustomerInfo can update several times during one purchase/restore. Cache
+    // it here; explicit purchase, restore, login, and app-resume flows perform
+    // the single server-authoritative reconciliation.
     _latestCustomerInfo = customerInfo;
-    unawaited(_applyRevenueCatAccess(customerInfo));
   }
 
-  Future<void> _applyRevenueCatAccess(rc.CustomerInfo customerInfo) async {
-    _latestCustomerInfo = customerInfo;
-    if (!Get.isRegistered<UserController>()) return;
-    final userController = Get.find<UserController>();
-    if (customerInfo.activeSubscriptions.contains(
-          professionalSubscriptionProductId,
-        ) ||
-        customerInfo.entitlements.active.containsKey(
-          professionalEntitlementId,
-        )) {
-      await userController.applyProfessionalUpgrade();
+  Future<bool> identifyCurrentUser() => reconcilePurchases();
+
+  Future<bool> _identifyRevenueCatUserForPurchase() async {
+    final userId = (await _storageService.getUserId())?.trim() ?? '';
+    if (userId.isEmpty) {
+      errorMessage.value = 'Please sign in before making a purchase.';
+      return false;
     }
 
-    for (final entry in examIapProductIds.entries) {
-      final productOwned = customerInfo.allPurchasedProductIdentifiers.contains(
-        entry.value,
-      );
-      final entitlementOwned = customerInfo.entitlements.active.containsKey(
-        'exam_${entry.key.toLowerCase().replaceFirst('api_', '')}',
-      );
-      if (!productOwned && !entitlementOwned) continue;
-      final examId = await _resolveExamIdForCode(entry.key);
-      if (examId != null) {
-        await userController.addUnlockedExamId(examId);
+    try {
+      final rc.CustomerInfo customerInfo;
+      if (await rc.Purchases.appUserID != userId) {
+        customerInfo = (await rc.Purchases.logIn(userId)).customerInfo;
+      } else {
+        customerInfo = await rc.Purchases.getCustomerInfo();
+      }
+      _latestCustomerInfo = customerInfo;
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: user identification failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'Unable to connect your account to the store. Please try again.';
+      return false;
+    }
+  }
+
+  Future<bool> reconcilePurchases({
+    bool restoreFromStore = false,
+    String? examId,
+    String? productId,
+    bool refreshProfileAfterSync = true,
+  }) async {
+    if (!_revenueCatConfigured) return false;
+    final userId = (await _storageService.getUserId())?.trim() ?? '';
+    if (userId.isEmpty) return false;
+
+    final existing = _reconciliationInFlight;
+    final isNormalRefresh =
+        !restoreFromStore && examId == null && productId == null;
+    if (existing != null && isNormalRefresh) return existing;
+    if (existing != null) await existing;
+
+    final reconciliation = _performReconciliation(
+      userId: userId,
+      restoreFromStore: restoreFromStore,
+      examId: examId,
+      productId: productId,
+      refreshProfileAfterSync: refreshProfileAfterSync,
+    );
+    _reconciliationInFlight = reconciliation;
+    try {
+      return await reconciliation;
+    } finally {
+      if (identical(_reconciliationInFlight, reconciliation)) {
+        _reconciliationInFlight = null;
       }
     }
   }
 
-  Future<void> identifyCurrentUser() async {
-    if (!_revenueCatConfigured) return;
-    final userId = (await _storageService.getUserId())?.trim() ?? '';
-    if (userId.isEmpty) return;
+  Future<bool> _performReconciliation({
+    required String userId,
+    required bool restoreFromStore,
+    required String? examId,
+    required String? productId,
+    required bool refreshProfileAfterSync,
+  }) async {
     try {
+      rc.CustomerInfo customerInfo;
       if (await rc.Purchases.appUserID != userId) {
         final result = await rc.Purchases.logIn(userId);
-        _latestCustomerInfo = result.customerInfo;
-        await _applyRevenueCatAccess(result.customerInfo);
+        customerInfo = result.customerInfo;
+        if (restoreFromStore) {
+          customerInfo = await rc.Purchases.restorePurchases();
+        }
+      } else {
+        customerInfo = restoreFromStore
+            ? await rc.Purchases.restorePurchases()
+            : await rc.Purchases.getCustomerInfo();
       }
-    } catch (e) {
-      debugPrint('RevenueCat: failed to identify user: $e');
+
+      _latestCustomerInfo = customerInfo;
+      final backendSynced = await _syncBackendAccess(
+        examId: examId,
+        productId: productId,
+      );
+      if (backendSynced &&
+          refreshProfileAfterSync &&
+          Get.isRegistered<UserController>()) {
+        await Get.find<UserController>().refreshProfile();
+      }
+      return backendSynced;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: purchase reconciliation failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'Unable to synchronize purchases. Please try Restore Purchase again.';
+      return false;
+    }
+  }
+
+  Future<bool> _syncBackendAccess({String? examId, String? productId}) async {
+    _lastBackendSyncData = null;
+    final requiresPurchaseConfirmation = productId?.trim().isNotEmpty == true;
+    final maxAttempts = requiresPurchaseConfirmation ? 4 : 1;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final response = await _apiService.syncRevenueCatAccess(
+          examId: examId,
+          productId: productId,
+        );
+        final confirmed =
+            response.success &&
+            revenueCatSyncConfirmsProduct(
+              productId: productId,
+              examId: examId,
+              data: response.data,
+            );
+        if (confirmed) {
+          _lastBackendSyncData = response.data;
+          return true;
+        }
+        debugPrint(
+          'RevenueCat: backend sync not confirmed '
+          'attempt=$attempt/$maxAttempts product=$productId '
+          'status=${response.statusCode} message=${response.message}',
+        );
+        if (response.statusCode == 400 ||
+            response.statusCode == 401 ||
+            response.statusCode == 403) {
+          break;
+        }
+      } catch (e) {
+        debugPrint(
+          'RevenueCat: backend access sync failed '
+          'attempt=$attempt/$maxAttempts: $e',
+        );
+      }
+
+      if (attempt < maxAttempts) {
+        await Future<void>.delayed(Duration(seconds: attempt));
+      }
+    }
+    errorMessage.value =
+        'Your purchase completed and access is still syncing. Please restore purchases in a moment.';
+    return false;
+  }
+
+  Future<bool> _recordCustomerCenterRefundRequest({
+    required String productId,
+    required String status,
+  }) async {
+    if (!refundRequestWasSubmitted(status)) return false;
+    try {
+      final response = await _apiService.recordRevenueCatRefundRequest(
+        productId: productId,
+        status: status,
+      );
+      if (!response.success) {
+        errorMessage.value =
+            'The refund was submitted, but access could not be updated. Please refresh.';
+        return false;
+      }
+      if (Get.isRegistered<UserController>()) {
+        await Get.find<UserController>().refreshProfile();
+      }
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: refund request sync failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'The refund was submitted, but access could not be updated. Please refresh.';
+      return false;
     }
   }
 
@@ -528,7 +878,7 @@ class IapService extends GetxService {
     if (!_revenueCatConfigured) return null;
     try {
       final customerInfo = await rc.Purchases.getCustomerInfo();
-      await _applyRevenueCatAccess(customerInfo);
+      _latestCustomerInfo = customerInfo;
       return customerInfo;
     } on PlatformException catch (e) {
       debugPrint('RevenueCat: customer info failed: ${e.message}');
@@ -544,7 +894,93 @@ class IapService extends GetxService {
     }
   }
 
-  Future<bool> presentProfessionalPaywall({String? selectedExamId}) async {
+  /// Loads subscription data only for the authenticated backend user.
+  /// This prevents the management UI from accidentally showing an anonymous
+  /// RevenueCat customer's purchase history.
+  Future<rc.CustomerInfo?> loadSubscriptionCustomerInfo() async {
+    if (!_revenueCatConfigured) {
+      errorMessage.value = 'Purchases are not configured for this app build.';
+      return null;
+    }
+
+    final userId = (await _storageService.getUserId())?.trim() ?? '';
+    if (userId.isEmpty) {
+      errorMessage.value = 'Please log in again to manage your subscription.';
+      return null;
+    }
+
+    try {
+      rc.CustomerInfo customerInfo;
+      if (await rc.Purchases.appUserID != userId) {
+        customerInfo = (await rc.Purchases.logIn(userId)).customerInfo;
+      } else {
+        customerInfo = await rc.Purchases.getCustomerInfo();
+      }
+
+      if (await rc.Purchases.appUserID != userId) {
+        errorMessage.value =
+            'Your subscription account could not be linked. Please log in again.';
+        return null;
+      }
+
+      _latestCustomerInfo = customerInfo;
+      final backendSynced = await _syncBackendAccess();
+      if (backendSynced && Get.isRegistered<UserController>()) {
+        await Get.find<UserController>().refreshProfile();
+      }
+      return customerInfo;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: subscription details failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'Unable to load subscription details. Please try again.';
+      return null;
+    }
+  }
+
+  Future<bool> openSubscriptionManagement() async {
+    final customerInfo = await loadSubscriptionCustomerInfo();
+    if (customerInfo == null) return false;
+    return _openNativeSubscriptionManagement(customerInfo: customerInfo);
+  }
+
+  Future<rc.RefundRequestStatus?>
+  requestProfessionalSubscriptionRefund() async {
+    if (!Platform.isIOS) {
+      errorMessage.value =
+          'Refund requests are available here only for Apple subscriptions.';
+      return null;
+    }
+
+    final customerInfo = await loadSubscriptionCustomerInfo();
+    final entitlement =
+        customerInfo?.entitlements.active[professionalEntitlementId];
+    if (entitlement == null) {
+      errorMessage.value = 'No active Professional subscription was found.';
+      return null;
+    }
+
+    try {
+      final status = await rc.Purchases.beginRefundRequestForEntitlement(
+        entitlement,
+      );
+      if (status == rc.RefundRequestStatus.success) {
+        await _recordCustomerCenterRefundRequest(
+          productId: entitlement.productIdentifier,
+          status: status.name,
+        );
+      }
+      return status;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: subscription refund request failed: $e');
+      debugPrint('$stackTrace');
+      errorMessage.value =
+          'Unable to start the refund request. Please try again.';
+      return null;
+    }
+  }
+
+  Future<bool> presentProfessionalPaywall({required String examId}) async {
     if (!_revenueCatConfigured) {
       errorMessage.value = 'Purchases are not configured for this app build.';
       return false;
@@ -581,20 +1017,23 @@ class IapService extends GetxService {
                 'The purchase completed, but access is still syncing. Please refresh in a moment.';
             return false;
           }
-          if (Get.isRegistered<UserController>()) {
-            await Get.find<UserController>().applyProfessionalUpgrade(
-              examId: selectedExamId,
-            );
+          final backendSynced = await _syncBackendAccess(
+            examId: examId,
+            productId: professionalSubscriptionProductId,
+          );
+          if (backendSynced && Get.isRegistered<UserController>()) {
+            await Get.find<UserController>().refreshProfile();
           }
           lastCompletedPurchase.value = IapCompletedPurchase(
             kind: IapPurchaseKind.professional,
             productId: professionalSubscriptionProductId,
-            examId: selectedExamId,
+            examId: examId,
             payload: <String, dynamic>{
               'provider': 'revenuecat',
               'appUserId': customerInfo?.originalAppUserId,
               'activeEntitlements': customerInfo?.entitlements.active.keys
                   .toList(growable: false),
+              'backendSynced': backendSynced,
             },
           );
           return true;
@@ -631,41 +1070,62 @@ class IapService extends GetxService {
       await identifyCurrentUser();
       await rc_ui.RevenueCatUI.presentCustomerCenter(
         onRestoreCompleted: (customerInfo) {
-          unawaited(_applyRevenueCatAccess(customerInfo));
+          _latestCustomerInfo = customerInfo;
         },
         onRestoreFailed: (error) {
           debugPrint('RevenueCat: Customer Center restore failed: $error');
           errorMessage.value = 'Restore failed. Please try again.';
         },
+        onRefundRequestCompleted: (productId, status) {
+          if (!refundRequestWasSubmitted(status)) return;
+          _refundRequestUpdateInFlight = _recordCustomerCenterRefundRequest(
+            productId: productId,
+            status: status,
+          );
+        },
       );
-      await refreshCustomerInfo();
-      return true;
+      final refundUpdate = _refundRequestUpdateInFlight;
+      _refundRequestUpdateInFlight = null;
+      if (refundUpdate != null) await refundUpdate;
+      return reconcilePurchases();
     } on PlatformException catch (e) {
       debugPrint('RevenueCat: Customer Center failed: ${e.message}');
-      errorMessage.value =
-          'Unable to open subscription management. Please try again.';
-      return false;
+      return _openNativeSubscriptionManagement();
     } catch (e, stackTrace) {
       debugPrint('RevenueCat: Customer Center failed: $e');
+      debugPrint('$stackTrace');
+      return _openNativeSubscriptionManagement();
+    }
+  }
+
+  Future<bool> _openNativeSubscriptionManagement({
+    rc.CustomerInfo? customerInfo,
+  }) async {
+    try {
+      final resolvedCustomerInfo =
+          customerInfo ??
+          _latestCustomerInfo ??
+          await rc.Purchases.getCustomerInfo();
+      final managementUrl = resolvedCustomerInfo.managementURL?.trim() ?? '';
+      final uri = Uri.tryParse(managementUrl);
+      if (uri == null || !uri.hasScheme) {
+        errorMessage.value =
+            'Subscription management is unavailable for this purchase.';
+        return false;
+      }
+
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        errorMessage.value =
+            'Unable to open subscription management. Please try again.';
+      }
+      return opened;
+    } catch (e, stackTrace) {
+      debugPrint('RevenueCat: native subscription management failed: $e');
       debugPrint('$stackTrace');
       errorMessage.value =
           'Unable to open subscription management. Please try again.';
       return false;
     }
-  }
-
-  Future<String?> _resolveExamIdForCode(String? examCode) async {
-    if (examCode == null || examCode.isEmpty) return null;
-    final response = await _examService.getActiveExams();
-    if (!response.success) {
-      debugPrint('IAP: unable to load exams for restore: ${response.message}');
-      return null;
-    }
-    for (final exam in response.data ?? const []) {
-      final resolved = resolveExamCode(code: exam.code, name: exam.name);
-      if (resolved == examCode) return exam.id;
-    }
-    debugPrint('IAP: no exam found for restored product code $examCode');
-    return null;
   }
 }

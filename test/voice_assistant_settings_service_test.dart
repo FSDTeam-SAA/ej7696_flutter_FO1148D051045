@@ -46,7 +46,7 @@ void main() {
     expect(loaded.languageCode, 'en-GB');
     expect(loaded.autoListenOnScreenOpen, isFalse);
     expect(loaded.commandSensitivity, CommandSensitivity.flexible);
-    expect(loaded.cloudFallbackEnabled, isFalse);
+    expect(loaded.cloudFallbackEnabled, isTrue);
     expect(loaded.showHeardText, isFalse);
     expect(loaded.accentProfile, VoiceAccentProfile.africanEnglish);
     expect(loaded.fastSpeakerMode, isTrue);

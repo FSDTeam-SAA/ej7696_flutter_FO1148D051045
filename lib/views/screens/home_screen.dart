@@ -104,13 +104,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshAll() async {
+    var profileRefreshedByPurchaseSync = false;
+    if (Get.isRegistered<IapService>()) {
+      profileRefreshedByPurchaseSync = await Get.find<IapService>()
+          .reconcilePurchases();
+    }
     if (!_homeController.isLoading.value) {
       await _homeController.fetchActiveExams();
     }
     if (!_homeController.isAnnouncementLoading.value) {
       await _homeController.fetchAnnouncements();
     }
-    if (!_userController.isLoading.value) {
+    if (!profileRefreshedByPurchaseSync && !_userController.isLoading.value) {
       await _userController.refreshProfile();
     }
   }
@@ -138,8 +143,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     _lastHandledIapCompletion = completed;
 
+    final backendSynced = completed.payload?['backendSynced'] == true;
+    if (!backendSynced) {
+      if (!mounted) return;
+      ErrorHandler.showSnackBar(
+        'Your purchase completed, but access is still syncing. Use Restore Purchase in a moment.',
+        isError: true,
+        context: context,
+      );
+      return;
+    }
+
     await _homeController.fetchActiveExams();
-    await _userController.refreshProfile();
     if (!mounted) return;
 
     final examId = (completed.examId ?? '').trim();
@@ -179,10 +194,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final effectivePlan = user == null
           ? widget.planTier
           : _userController.planTier.value;
-      final effectiveUnlocked =
+      final resolvedUnlocked =
           user == null && _userController.unlockedExamIds.value.isEmpty
           ? widget.unlockedCourseIds
           : _userController.unlockedExamIds.value;
+      final effectiveUnlocked = resolvedUnlocked;
 
       return HomeDashboard(
         planTier: effectivePlan,
@@ -488,16 +504,6 @@ class HomeDashboard extends StatelessWidget {
         await userController.refreshProfile();
         if (!context.mounted) return;
         final DateTime fallbackPaidAt = DateTime.now();
-        final DateTime fallbackExamExpiresAt = DateTime(
-          fallbackPaidAt.year,
-          fallbackPaidAt.month + 3,
-          fallbackPaidAt.day,
-          fallbackPaidAt.hour,
-          fallbackPaidAt.minute,
-          fallbackPaidAt.second,
-          fallbackPaidAt.millisecond,
-          fallbackPaidAt.microsecond,
-        );
         final PaymentSuccessDetails paymentDetails =
             PaymentSuccessDetails.fromPayload(
               confirmRes.data,
@@ -507,9 +513,7 @@ class HomeDashboard extends StatelessWidget {
               fallbackCurrency:
                   (createRes.data?['currency']?.toString() ?? 'USD')
                       .toUpperCase(),
-              fallbackUnlockDurationLabel: '3 months',
-              fallbackExpiresAt: fallbackExamExpiresAt,
-              fallbackExpiryMonths: 3,
+              fallbackUnlockDurationLabel: '6 months',
               fallbackPaymentMethodLabel: 'Card',
               fallbackPaidAt: fallbackPaidAt,
               fallbackProvider: 'stripe',
@@ -749,8 +753,10 @@ class HomeDashboard extends StatelessWidget {
                             bodyOfKnowledgeContent: exam.bodyOfKnowledgeContent,
                             code: exam.code,
                             isUnlocked: exam.unlocked,
+                            isOwned: exam.owned,
                             unlockPrice: exam.unlockPrice,
                             currency: exam.currency,
+                            isExpired: exam.isExpired,
                           ),
                         )
                         .toList()
@@ -808,7 +814,7 @@ class HomeDashboard extends StatelessWidget {
                   );
                   final iapProductId = resolvedExamCode == null
                       ? null
-                      : examIapProductIds[resolvedExamCode];
+                      : examSubscriptionProductId(resolvedExamCode);
                   final iapPrice = iapService?.priceForExam(
                     examCode: course.code,
                     examName: course.title,
@@ -882,6 +888,7 @@ class HomeDashboard extends StatelessWidget {
                             maxSelect: 1,
                             initialSelectedId: course.examId ?? course.id,
                             unlockedIds: unlockedCourseIds,
+                            isProfessionalActive: true,
                           ),
                         ).then((result) {
                           if (result == null) return;
@@ -1072,78 +1079,107 @@ class CourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFD9D9E3), width: 1),
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: course.imageUrl != null && course.imageUrl!.isNotEmpty
-                  ? Image.network(
-                      course.imageUrl!,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Image.asset(
-                          course.imageAsset,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                        );
-                      },
-                    )
-                  : Image.asset(
-                      course.imageAsset,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final Color accentColor = isUnlocked
+        ? const Color(0xFF2DBD67)
+        : const Color(0xFF2D4F88);
+
+    return Material(
+      color: Colors.white,
+      elevation: 1,
+      shadowColor: const Color(0x1A111827),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: accentColor.withValues(alpha: 0.18)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    course.title,
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child:
+                        course.imageUrl != null && course.imageUrl!.isNotEmpty
+                        ? Image.network(
+                            course.imageUrl!,
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Image.asset(
+                                course.imageAsset,
+                                width: 72,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              );
+                            },
+                          )
+                        : Image.asset(
+                            course.imageAsset,
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                          ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          course.title,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            height: 1.25,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111827),
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          course.subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.3,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    course.subtitle,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF6B7280),
-                    ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 24,
+                    color: accentColor.withValues(alpha: 0.72),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            _CourseStatus(
-              isUnlocked: isUnlocked,
-              showPriceUnlock: showPriceUnlock,
-              iapPrice: iapPrice,
-              iapUnavailable: iapUnavailable,
-              isPurchasing: isPurchasing,
-              unlockPrice: course.unlockPrice,
-              currency: course.currency,
-            ),
-          ],
+              const SizedBox(height: 14),
+              _CourseStatus(
+                isUnlocked: isUnlocked,
+                showPriceUnlock: showPriceUnlock,
+                iapPrice: iapPrice,
+                iapUnavailable: iapUnavailable,
+                isPurchasing: isPurchasing,
+                unlockPrice: course.unlockPrice,
+                currency: course.currency,
+                isExpired: course.isExpired,
+                stretch: true,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1172,6 +1208,8 @@ class _CourseStatus extends StatelessWidget {
   final bool isPurchasing;
   final double? unlockPrice;
   final String? currency;
+  final bool isExpired;
+  final bool stretch;
 
   const _CourseStatus({
     required this.isUnlocked,
@@ -1181,25 +1219,37 @@ class _CourseStatus extends StatelessWidget {
     this.isPurchasing = false,
     this.unlockPrice,
     this.currency,
+    this.isExpired = false,
+    this.stretch = false,
   });
 
   @override
   Widget build(BuildContext context) {
     if (isUnlocked) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          _StatusDot(color: Color(0xFF2DBD67), icon: Icons.check),
-          SizedBox(width: 6),
-          Text(
-            'Unlocked',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF2DBD67),
-            ),
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F7EC),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              _StatusDot(color: Color(0xFF2DBD67), icon: Icons.check),
+              SizedBox(width: 7),
+              Text(
+                'Ready to practice',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1D7A44),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -1209,39 +1259,84 @@ class _CourseStatus extends StatelessWidget {
           : iapUnavailable
           ? 'Unavailable'
           : iapPrice != null
-          ? 'Unlock for $iapPrice'
-          : _formatUnlockLabel(unlockPrice, currency);
+          ? '${isExpired ? 'Renew' : 'Unlock'} for $iapPrice / 6 months'
+          : '${isExpired ? 'Renew for \$150' : _formatUnlockLabel(unlockPrice, currency)} / 6 months';
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        width: stretch ? double.infinity : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF2DBD67),
-          borderRadius: BorderRadius.circular(16),
+          color: iapUnavailable
+              ? const Color(0xFF9CA3AF)
+              : const Color(0xFF2DBD67),
+          borderRadius: BorderRadius.circular(13),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
+        child: Row(
+          mainAxisSize: stretch ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isPurchasing)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            else
+              Icon(
+                iapUnavailable
+                    ? Icons.info_outline_rounded
+                    : isExpired
+                    ? Icons.refresh_rounded
+                    : Icons.lock_open_rounded,
+                size: 18,
+                color: Colors.white,
+              ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: const [
-        _StatusDot(color: Color(0xFFE24B4B), icon: Icons.lock),
-        SizedBox(width: 6),
-        Text(
-          'Locked',
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFFE24B4B),
-          ),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEEEE),
+          borderRadius: BorderRadius.circular(12),
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            _StatusDot(color: Color(0xFFE24B4B), icon: Icons.lock),
+            SizedBox(width: 7),
+            Text(
+              'Locked',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFB83232),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1278,8 +1373,10 @@ class CourseItem {
   final String? bodyOfKnowledgeContent;
   final String? code;
   final bool? isUnlocked;
+  final bool isOwned;
   final double? unlockPrice;
   final String? currency;
+  final bool isExpired;
 
   const CourseItem({
     required this.id,
@@ -1293,8 +1390,10 @@ class CourseItem {
     this.bodyOfKnowledgeContent,
     this.code,
     this.isUnlocked,
+    this.isOwned = false,
     this.unlockPrice,
     this.currency,
+    this.isExpired = false,
   });
 }
 
