@@ -753,10 +753,10 @@ class HomeDashboard extends StatelessWidget {
                             bodyOfKnowledgeContent: exam.bodyOfKnowledgeContent,
                             code: exam.code,
                             isUnlocked: exam.unlocked,
-                            isOwned: exam.owned,
+                            isOwned: exam.owned ?? exam.unlocked ?? false,
                             unlockPrice: exam.unlockPrice,
                             currency: exam.currency,
-                            isExpired: exam.isExpired,
+                            isExpired: exam.isExpired ?? false,
                           ),
                         )
                         .toList()
@@ -888,7 +888,6 @@ class HomeDashboard extends StatelessWidget {
                             maxSelect: 1,
                             initialSelectedId: course.examId ?? course.id,
                             unlockedIds: unlockedCourseIds,
-                            isProfessionalActive: true,
                           ),
                         ).then((result) {
                           if (result == null) return;

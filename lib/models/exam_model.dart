@@ -79,6 +79,8 @@ class Exam {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final bool? unlocked;
+  final bool? owned;
+  final bool? isExpired;
   final double? unlockPrice;
   final String? currency;
 
@@ -96,6 +98,8 @@ class Exam {
     this.createdAt,
     this.updatedAt,
     this.unlocked,
+    this.owned,
+    this.isExpired,
     this.unlockPrice,
     this.currency,
   });
@@ -151,6 +155,8 @@ class Exam {
       createdAt: _toDate(json['createdAt']),
       updatedAt: _toDate(json['updatedAt']),
       unlocked: _toBool(json['unlocked']),
+      owned: _toBool(json['owned'] ?? json['isOwned']),
+      isExpired: _toBool(json['isExpired'] ?? json['expired']),
       unlockPrice: _toDouble(json['unlockPrice'] ?? json['unlock_price']),
       currency: json['currency']?.toString(),
     );
@@ -171,6 +177,8 @@ class Exam {
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
       'unlocked': unlocked,
+      'owned': owned,
+      'isExpired': isExpired,
       'unlockPrice': unlockPrice,
       'currency': currency,
     };
