@@ -216,7 +216,7 @@ void main() {
 
       expect(result.decision, VoiceCommandDecision.execute);
       expect(result.intent?.type, VoiceIntentType.readQuestion);
-      expect(result.intent?.source, 'fuzzy_alias');
+      expect(result.intent?.source, 'exact_alias');
     });
 
     test('ambiguous fuzzy commands ask for retry instead of executing', () {

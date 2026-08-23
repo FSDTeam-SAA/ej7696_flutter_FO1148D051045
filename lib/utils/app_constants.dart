@@ -8,8 +8,8 @@ class AppConstants {
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
   // API Constants
-  static const String apiOrigin = 'http://187.77.10.158:5001';
-  // static const String apiOrigin = 'http://localhost:5001';
+//   static const String apiOrigin = 'https://api.inspectorspath.com';
+  static const String apiOrigin = 'http://localhost:5001';
   static const String baseUrl = '$apiOrigin/api/v1';
   static const String publicBaseUrl = apiOrigin;
   static const Duration apiTimeout = Duration(seconds: 30);
