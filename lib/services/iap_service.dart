@@ -817,9 +817,14 @@ class IapService extends GetxService {
     } catch (e, stackTrace) {
       debugPrint('RevenueCat: purchase reconciliation failed: $e');
       debugPrint('$stackTrace');
-      errorMessage.value =
-          'We could not confirm your purchases with our server. '
-          'Your purchase is safe — please try Restore Purchase again.';
+      // Silent for the background reconcile that runs on every app resume;
+      // only a purchase being confirmed or an explicit Restore Purchase tap
+      // is something the user is waiting on.
+      if (productId?.trim().isNotEmpty == true || restoreFromStore) {
+        errorMessage.value =
+            'We could not confirm your purchases with our server. '
+            'Your purchase is safe — please try Restore Purchase again.';
+      }
       return false;
     }
   }
@@ -828,6 +833,8 @@ class IapService extends GetxService {
     _lastBackendSyncData = null;
     final requiresPurchaseConfirmation = productId?.trim().isNotEmpty == true;
     final maxAttempts = requiresPurchaseConfirmation ? 4 : 1;
+
+    var conflicted = false;
 
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -851,6 +858,14 @@ class IapService extends GetxService {
           'attempt=$attempt/$maxAttempts product=$productId '
           'status=${response.statusCode} message=${response.message}',
         );
+        // These are all deterministic: the same request will fail the same way,
+        // so retrying only delays the message the user needs to see. 409 means
+        // the store transaction is already owned by another account, which no
+        // amount of Restore Purchase can resolve.
+        if (response.statusCode == 409) {
+          conflicted = true;
+          break;
+        }
         if (response.statusCode == 400 ||
             response.statusCode == 401 ||
             response.statusCode == 403) {
@@ -867,9 +882,18 @@ class IapService extends GetxService {
         await Future<void>.delayed(Duration(seconds: attempt));
       }
     }
-    errorMessage.value =
-        'Payment went through, but unlocking is taking longer than usual. '
-        'Your purchase is safe — tap Restore Purchase in a moment.';
+
+    // Background reconciliation runs on every app resume, so a failure there
+    // must stay silent — otherwise the user gets an error banner each time
+    // they return to the app. Only a purchase we are actively confirming
+    // deserves a message.
+    if (requiresPurchaseConfirmation) {
+      errorMessage.value = conflicted
+          ? 'This store purchase is already linked to another account, so we '
+                'could not unlock the exam. Please contact support.'
+          : 'Payment went through, but unlocking is taking longer than usual. '
+                'Your purchase is safe — tap Restore Purchase in a moment.';
+    }
     return false;
   }
 

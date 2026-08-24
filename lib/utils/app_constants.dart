@@ -12,25 +12,37 @@ class AppConstants {
       'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
   // API Constants
-//   static const String apiOrigin = 'https://api.inspectorspath.com';
+
+  /// The live API. This is what the app talks to unless a build explicitly
+  /// opts into the local backend below.
+  static const String liveApiOrigin = 'https://api.inspectorspath.com';
 
   /// Port the local backend listens on (Back_end-ej7696 `.env` -> PORT).
   static const int localApiPort = 5001;
 
-  /// Overrides everything below. Use for a deployed environment, or when this
-  /// Mac's Wi-Fi address differs from [_devHostLanIp]:
+  /// Overrides everything else. Use for a staging host, or when this Mac's
+  /// Wi-Fi address differs from [_devHostLanIp]:
   ///   flutter run --dart-define=API_ORIGIN=http://192.168.10.116:5001
   static const String _apiOriginOverride = String.fromEnvironment('API_ORIGIN');
+
+  /// Point the app at the local backend instead of [liveApiOrigin]:
+  ///   flutter run --dart-define=USE_LOCAL_API=true
+  static const bool useLocalApi = bool.fromEnvironment('USE_LOCAL_API');
 
   /// This Mac's Wi-Fi (en1) address, used by real devices on the same network.
   /// Update it when you move to a different Wi-Fi, or pass API_ORIGIN instead.
   static const String _devHostLanIp = '192.168.10.116';
 
+  static String _resolveApiOrigin() {
+    if (_apiOriginOverride.isNotEmpty) return _apiOriginOverride;
+    if (!useLocalApi) return liveApiOrigin;
+    return _resolveLocalApiOrigin();
+  }
+
   /// A real phone must reach the dev machine by its LAN address: `localhost`
   /// resolves to the phone itself, and an Android emulator reserves 10.0.2.2
   /// for the host. Only simulators, macOS and web share the host's loopback.
-  static String _resolveApiOrigin() {
-    if (_apiOriginOverride.isNotEmpty) return _apiOriginOverride;
+  static String _resolveLocalApiOrigin() {
     if (kIsWeb) return 'http://localhost:$localApiPort';
     if (Platform.isAndroid) {
       return _isAndroidEmulator
