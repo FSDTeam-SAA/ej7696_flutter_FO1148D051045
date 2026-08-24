@@ -220,10 +220,20 @@ class IapService extends GetxService {
   final RxBool isLoadingProducts = false.obs;
   final RxBool isRestoring = false.obs;
   final RxString errorMessage = ''.obs;
+
+  /// Confirmations and neutral progress notes. Kept apart from [errorMessage]
+  /// so the UI can style "it worked" differently from "it failed" — the two
+  /// used to share one field and every success rendered in the error colour.
+  final RxString successMessage = ''.obs;
   final RxSet<String> missingProductIds = <String>{}.obs;
   final RxSet<String> inFlightProductIds = <String>{}.obs;
   final Rx<IapCompletedPurchase?> lastCompletedPurchase =
       Rx<IapCompletedPurchase?>(null);
+
+  void _clearMessages() {
+    errorMessage.value = '';
+    successMessage.value = '';
+  }
 
   bool get isMobileStore => Platform.isIOS || Platform.isAndroid;
   String get professionalSubscriptionProductId => Platform.isAndroid
@@ -331,7 +341,7 @@ class IapService extends GetxService {
     return _buyRevenueCatProduct(productId: productId, intent: intent);
   }
 
-  Future<bool> buyProfessionalSubscription({required String examId}) async {
+  Future<bool> buyProfessionalSubscription({String? examId}) async {
     if (!isMobileStore) return false;
     final productId = professionalSubscriptionProductId;
     final intent = _PendingIapIntent(
@@ -346,7 +356,7 @@ class IapService extends GetxService {
     if (!isMobileStore) return;
     if (isRestoring.value) return;
     isRestoring.value = true;
-    errorMessage.value = '';
+    _clearMessages();
     debugPrint('IAP: restore started.');
     try {
       if (!_revenueCatConfigured) {
@@ -355,12 +365,15 @@ class IapService extends GetxService {
       }
       final backendSynced = await reconcilePurchases(restoreFromStore: true);
       if (backendSynced) {
-        errorMessage.value = 'Purchases restored successfully.';
+        successMessage.value =
+            'Your purchases have been restored. Your exams are ready to use.';
       }
     } catch (e, stackTrace) {
       debugPrint('IAP: restore failed: $e');
       debugPrint('$stackTrace');
-      errorMessage.value = 'Restore failed. Please try again.';
+      errorMessage.value =
+          'We could not restore your purchases just now. '
+          'Please check your connection and tap Restore Purchase again.';
     } finally {
       isRestoring.value = false;
       debugPrint('IAP: restore request finished.');
@@ -416,7 +429,7 @@ class IapService extends GetxService {
 
   Future<void> _loadRevenueCatProducts() async {
     isLoadingProducts.value = true;
-    errorMessage.value = '';
+    _clearMessages();
     try {
       if (!_revenueCatConfigured) {
         isStoreAvailable.value = false;
@@ -504,7 +517,7 @@ class IapService extends GetxService {
 
     _pendingIntents[productId] = intent;
     inFlightProductIds.add(productId);
-    errorMessage.value = '';
+    _clearMessages();
     try {
       final identified = await _identifyRevenueCatUserForPurchase();
       if (!identified) return false;
@@ -535,10 +548,12 @@ class IapService extends GetxService {
             if (restored) return true;
             if (errorMessage.value.isNotEmpty) break;
           }
-          errorMessage.value = 'Purchase cancelled.';
+          errorMessage.value = 'Purchase cancelled. Nothing was charged.';
           break;
         case rc.PurchasesErrorCode.paymentPendingError:
-          errorMessage.value = 'Purchase is pending.';
+          errorMessage.value =
+              'Your payment is still being processed by the store. '
+              'We will unlock your exam as soon as it is approved.';
           break;
         case rc.PurchasesErrorCode.productAlreadyPurchasedError:
           final backendSynced = await reconcilePurchases(
@@ -546,9 +561,14 @@ class IapService extends GetxService {
             examId: intent.examId,
             productId: productId,
           );
-          errorMessage.value = backendSynced
-              ? 'Purchase already owned and restored.'
-              : 'Purchase is owned, but access is still syncing. Please try Restore Purchase again.';
+          if (backendSynced) {
+            successMessage.value =
+                'You already own this. Access has been restored.';
+          } else {
+            errorMessage.value =
+                'You already own this, but we are still unlocking it. '
+                'Please tap Restore Purchase in a moment.';
+          }
           return backendSynced;
         default:
           debugPrint('RevenueCat: purchase failed ($code): ${e.message}');
@@ -597,7 +617,8 @@ class IapService extends GetxService {
       if (Get.isRegistered<UserController>()) {
         await Get.find<UserController>().refreshProfile();
       }
-      errorMessage.value = 'Existing purchase restored successfully.';
+      successMessage.value =
+          'Your existing purchase has been restored. Access is now active.';
       debugPrint(
         'RevenueCat: recovered active App Store purchase for $productId.',
       );
@@ -623,8 +644,23 @@ class IapService extends GetxService {
         ? Get.find<UserController>()
         : null;
     if (backendSynced && userController != null) {
+      // Flip the exam to unlocked locally first. The backend has already
+      // confirmed the entitlement at this point, so waiting for the profile
+      // round-trip only leaves the card showing "Unlock" for no reason —
+      // which previously lasted until the 60s poll caught up.
+      final purchasedExamId = intent.examId?.trim() ?? '';
+      if (purchasedExamId.isNotEmpty) {
+        await userController.addUnlockedExamId(purchasedExamId);
+      }
       // The backend is authoritative for each exam's independent expiry.
       await userController.refreshProfile();
+      // refreshProfile replaces the id set with the server's list, so re-apply
+      // the purchase in case /unlocks has not caught up yet. Without this the
+      // card flips back to "Unlock" right after appearing unlocked.
+      if (purchasedExamId.isNotEmpty &&
+          !userController.unlockedExamIds.value.contains(purchasedExamId)) {
+        await userController.addUnlockedExamId(purchasedExamId);
+      }
     }
 
     final transactionId = result.storeTransaction.transactionIdentifier;
@@ -782,7 +818,8 @@ class IapService extends GetxService {
       debugPrint('RevenueCat: purchase reconciliation failed: $e');
       debugPrint('$stackTrace');
       errorMessage.value =
-          'Unable to synchronize purchases. Please try Restore Purchase again.';
+          'We could not confirm your purchases with our server. '
+          'Your purchase is safe — please try Restore Purchase again.';
       return false;
     }
   }
@@ -831,7 +868,8 @@ class IapService extends GetxService {
       }
     }
     errorMessage.value =
-        'Your purchase completed and access is still syncing. Please restore purchases in a moment.';
+        'Payment went through, but unlocking is taking longer than usual. '
+        'Your purchase is safe — tap Restore Purchase in a moment.';
     return false;
   }
 
@@ -847,7 +885,8 @@ class IapService extends GetxService {
       );
       if (!response.success) {
         errorMessage.value =
-            'The refund was submitted, but access could not be updated. Please refresh.';
+            'Your refund was submitted, but your access has not updated yet. '
+            'Please pull down to refresh in a moment.';
         return false;
       }
       if (Get.isRegistered<UserController>()) {
@@ -858,7 +897,8 @@ class IapService extends GetxService {
       debugPrint('RevenueCat: refund request sync failed: $e');
       debugPrint('$stackTrace');
       errorMessage.value =
-          'The refund was submitted, but access could not be updated. Please refresh.';
+          'Your refund was submitted, but your access has not updated yet. '
+          'Please pull down to refresh in a moment.';
       return false;
     }
   }
@@ -986,7 +1026,7 @@ class IapService extends GetxService {
       return false;
     }
 
-    errorMessage.value = '';
+    _clearMessages();
     try {
       await identifyCurrentUser();
       _offerings ??= await rc.Purchases.getOfferings();
@@ -1065,7 +1105,7 @@ class IapService extends GetxService {
       return false;
     }
 
-    errorMessage.value = '';
+    _clearMessages();
     try {
       await identifyCurrentUser();
       await rc_ui.RevenueCatUI.presentCustomerCenter(

@@ -147,14 +147,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!backendSynced) {
       if (!mounted) return;
       ErrorHandler.showSnackBar(
-        'Your purchase completed, but access is still syncing. Use Restore Purchase in a moment.',
-        isError: true,
+        'Payment received. We are still unlocking your exam — '
+        'pull down to refresh in a moment.',
+        isError: false,
         context: context,
       );
       return;
     }
 
-    await _homeController.fetchActiveExams();
+    // Both sources feed the unlocked state: the exam list carries `unlocked`
+    // and the profile carries the unlocked ids. Refreshing only one of them
+    // left the other stale until the next poll.
+    await Future.wait([
+      _homeController.fetchActiveExams(),
+      _userController.refreshProfile(),
+    ]);
     if (!mounted) return;
 
     final examId = (completed.examId ?? '').trim();

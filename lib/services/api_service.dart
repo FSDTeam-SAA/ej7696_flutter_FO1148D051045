@@ -913,6 +913,43 @@ class ApiService {
     );
   }
 
+  /// Sync RevenueCat entitlements with the backend.
+  /// POST {{base_url}}/api/v1/payments/revenuecat/sync
+  Future<ApiResponse<Map<String, dynamic>>> syncRevenueCatAccess({
+    String? examId,
+    String? productId,
+  }) async {
+    final body = <String, dynamic>{};
+    if (examId != null && examId.trim().isNotEmpty) {
+      body['examId'] = examId.trim();
+    }
+    if (productId != null && productId.trim().isNotEmpty) {
+      body['productId'] = productId.trim();
+    }
+    return post<Map<String, dynamic>>(
+      ApiEndpoints.revenueCatSync,
+      body: body,
+      fromJson: (json) => json is Map<String, dynamic>
+          ? json
+          : Map<String, dynamic>.from(json as Map),
+    );
+  }
+
+  /// Record a RevenueCat customer-center refund request.
+  /// POST {{base_url}}/api/v1/payments/revenuecat/refund-request
+  Future<ApiResponse<Map<String, dynamic>>> recordRevenueCatRefundRequest({
+    required String productId,
+    required String status,
+  }) async {
+    return post<Map<String, dynamic>>(
+      ApiEndpoints.revenueCatRefundRequest,
+      body: {'productId': productId.trim(), 'status': status.trim()},
+      fromJson: (json) => json is Map<String, dynamic>
+          ? json
+          : Map<String, dynamic>.from(json as Map),
+    );
+  }
+
   /// Create support ticket (Help & Support). POST {{base_url}}/api/v1/support
   /// Requires auth. Optional attachment field name is "attachment".
   Future<ApiResponse<Map<String, dynamic>>> createSupportTicket({

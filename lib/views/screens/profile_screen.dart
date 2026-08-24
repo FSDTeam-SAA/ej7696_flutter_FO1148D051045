@@ -362,8 +362,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               final opened = await iapService
                                   .presentCustomerCenter();
                               if (!opened && context.mounted) {
+                                final reason =
+                                    iapService.errorMessage.value.isNotEmpty
+                                    ? iapService.errorMessage.value
+                                    : 'We could not open subscription '
+                                          'management right now. Please try '
+                                          'again in a moment.';
                                 ErrorHandler.showSnackBar(
-                                  iapService.errorMessage.value,
+                                  reason,
                                   isError: true,
                                   context: context,
                                 );
@@ -377,8 +383,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             subtitle: Platform.isAndroid
                                 ? 'Restore Google Play purchases for this account'
                                 : 'Restore Apple purchases for this account',
-                            onTap: () {
-                              Get.find<IapService>().restorePurchases();
+                            onTap: () async {
+                              final iapService = Get.find<IapService>();
+                              await iapService.restorePurchases();
+                              if (!context.mounted) return;
+                              final succeeded =
+                                  iapService.successMessage.value.isNotEmpty;
+                              final message = succeeded
+                                  ? iapService.successMessage.value
+                                  : (iapService.errorMessage.value.isNotEmpty
+                                        ? iapService.errorMessage.value
+                                        : 'We did not find any purchases to '
+                                              'restore for this account.');
+                              ErrorHandler.showSnackBar(
+                                message,
+                                isError: !succeeded,
+                                context: context,
+                              );
                             },
                           ),
                         ],

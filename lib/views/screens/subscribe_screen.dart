@@ -5,6 +5,7 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../controllers/home_controller.dart';
 import '../../controllers/user_controller.dart';
 import '../../core/error/error_handler.dart';
 import '../../models/api_response.dart';
@@ -83,7 +84,13 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       return;
     }
     _lastHandledIapCompletion = completed;
-    await _userController.refreshProfile();
+    // Keep the cached exam list in step with the profile, otherwise Home still
+    // renders the old locked card when the user navigates back.
+    await Future.wait([
+      _userController.refreshProfile(),
+      if (Get.isRegistered<HomeController>())
+        Get.find<HomeController>().fetchActiveExams(),
+    ]);
     await _loadProfessionalPlan();
     if (!mounted) return;
 
@@ -109,12 +116,49 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     }
 
     if (completed.kind == IapPurchaseKind.exam) {
-      ErrorHandler.showSnackBar(
-        'Exam unlocked successfully.',
-        isError: false,
-        context: context,
+      final paymentDetails = completed.paymentDetails;
+      final examId = completed.examId;
+      if (paymentDetails == null || examId == null || examId.isEmpty) {
+        ErrorHandler.showSnackBar(
+          'Your exam is unlocked and ready to use.',
+          isError: false,
+          context: context,
+        );
+        return;
+      }
+      // Mirror the Stripe unlock so both payment routes end on the same
+      // confirmation screen, with the exam details when we can resolve them.
+      final exam = await _findExamById(examId);
+      if (!mounted) return;
+      context.push(
+        '/exam-unlock-success',
+        extra: {
+          'courseTitle': exam?.name ?? paymentDetails.title,
+          'examId': examId,
+          if (exam != null) 'questionCount': exam.questionCount,
+          if (exam != null)
+            'effectivitySheetContent': exam.effectivitySheetContent,
+          if (exam != null) 'bodyOfKnowledgeContent': exam.bodyOfKnowledgeContent,
+          'paymentSummary': paymentDetails.toJson(),
+        },
       );
     }
+  }
+
+  /// Best-effort lookup so the confirmation screen can show the exam's real
+  /// name and content counts. A failure here must not hide the confirmation,
+  /// so the caller falls back to the payment title.
+  Future<ExamModel?> _findExamById(String examId) async {
+    try {
+      final res = await _examService.getActiveExams();
+      if (!res.success || res.data == null) return null;
+      for (final exam in res.data!) {
+        if (exam.id == examId) return exam;
+      }
+    } catch (e) {
+      debugPrint('Subscribe: exam lookup for unlock success failed: $e');
+    }
+    return null;
   }
 
   Future<void> _loadProfessionalPlan() async {
@@ -497,14 +541,41 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
           ),
         ),
       );
-      if (iapService.errorMessage.value.isNotEmpty) {
+      final statusMessage = iapService.successMessage.value.isNotEmpty
+          ? iapService.successMessage.value
+          : iapService.errorMessage.value;
+      if (statusMessage.isNotEmpty) {
+        final isSuccess = iapService.successMessage.value.isNotEmpty;
         children.add(
           Padding(
             padding: const EdgeInsets.only(top: 10),
-            child: Text(
-              iapService.errorMessage.value,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  isSuccess
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline,
+                  size: 15,
+                  color: isSuccess
+                      ? const Color(0xFF15803D)
+                      : const Color(0xFFB91C1C),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    statusMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isSuccess
+                          ? const Color(0xFF15803D)
+                          : const Color(0xFFB91C1C),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -655,7 +726,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
         );
       } else {
         await iapService.buyProfessionalSubscription(
-          selectedExamId: result.exam.id,
+          examId: result.exam.id,
         );
       }
       return;

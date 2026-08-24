@@ -1,3 +1,7 @@
+import 'dart:io' show Directory, File, Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 class AppConstants {
   // App Info
   static const String appName = "Inspector's Path";
@@ -9,9 +13,51 @@ class AppConstants {
 
   // API Constants
 //   static const String apiOrigin = 'https://api.inspectorspath.com';
-  static const String apiOrigin = 'http://localhost:5001';
-  static const String baseUrl = '$apiOrigin/api/v1';
-  static const String publicBaseUrl = apiOrigin;
+
+  /// Port the local backend listens on (Back_end-ej7696 `.env` -> PORT).
+  static const int localApiPort = 5001;
+
+  /// Overrides everything below. Use for a deployed environment, or when this
+  /// Mac's Wi-Fi address differs from [_devHostLanIp]:
+  ///   flutter run --dart-define=API_ORIGIN=http://192.168.10.116:5001
+  static const String _apiOriginOverride = String.fromEnvironment('API_ORIGIN');
+
+  /// This Mac's Wi-Fi (en1) address, used by real devices on the same network.
+  /// Update it when you move to a different Wi-Fi, or pass API_ORIGIN instead.
+  static const String _devHostLanIp = '192.168.10.116';
+
+  /// A real phone must reach the dev machine by its LAN address: `localhost`
+  /// resolves to the phone itself, and an Android emulator reserves 10.0.2.2
+  /// for the host. Only simulators, macOS and web share the host's loopback.
+  static String _resolveApiOrigin() {
+    if (_apiOriginOverride.isNotEmpty) return _apiOriginOverride;
+    if (kIsWeb) return 'http://localhost:$localApiPort';
+    if (Platform.isAndroid) {
+      return _isAndroidEmulator
+          ? 'http://10.0.2.2:$localApiPort'
+          : 'http://$_devHostLanIp:$localApiPort';
+    }
+    if (Platform.isIOS) {
+      return _isIosSimulator
+          ? 'http://localhost:$localApiPort'
+          : 'http://$_devHostLanIp:$localApiPort';
+    }
+    return 'http://localhost:$localApiPort';
+  }
+
+  /// The iOS simulator is the only iOS target that sets these Xcode variables.
+  static bool get _isIosSimulator =>
+      Platform.environment.containsKey('SIMULATOR_DEVICE_NAME') ||
+      Platform.environment.containsKey('SIMULATOR_UDID');
+
+  /// The Android emulator exposes its Goldfish/Ranchu qemu pipe; phones do not.
+  static bool get _isAndroidEmulator =>
+      Directory('/dev/socket/qemud').existsSync() ||
+      File('/dev/qemu_pipe').existsSync();
+
+  static final String apiOrigin = _resolveApiOrigin();
+  static final String baseUrl = '$apiOrigin/api/v1';
+  static final String publicBaseUrl = apiOrigin;
   static const Duration apiTimeout = Duration(seconds: 30);
 
   // Feature Flags

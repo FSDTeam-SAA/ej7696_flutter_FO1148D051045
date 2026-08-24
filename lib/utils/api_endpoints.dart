@@ -84,4 +84,7 @@ class ApiEndpoints {
       '$payments/apple/exam/$examId/verify';
   static String professionalPlanAppleVerify() =>
       '$payments/apple/plan/professional/verify';
+  static const String revenueCatSync = '$payments/revenuecat/sync';
+  static const String revenueCatRefundRequest =
+      '$payments/revenuecat/refund-request';
 }

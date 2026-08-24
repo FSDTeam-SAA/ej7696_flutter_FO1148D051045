@@ -49,20 +49,27 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera to capture inspection photos and documents.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app accesses your photo library to attach images to inspection reports.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>This app saves inspection photos to your photo library.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>This app uses the microphone for voice commands during exam practice.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>This app uses speech recognition so you can answer exam questions and navigate hands-free by voice.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app uses your location to tag inspection sites accurately.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Allows the app to reach the local development API server on your network.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>This app uses your location to tag inspection sites accurately.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location to tag inspection sites accurately.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app uses the microphone for voice commands during exam practice.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app saves inspection photos to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app accesses your photo library to attach images to inspection reports.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>This app uses speech recognition so you can answer exam questions and navigate hands-free by voice.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

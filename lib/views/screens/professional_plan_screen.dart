@@ -260,14 +260,47 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              if (iapService?.errorMessage.value.isNotEmpty ??
-                                  false)
-                                Text(
-                                  iapService!.errorMessage.value,
-                                  style: const TextStyle(
-                                    color: Color(0xFFB91C1C),
-                                    fontSize: 12,
-                                  ),
+                              if ((iapService?.successMessage.value
+                                          .isNotEmpty ??
+                                      false) ||
+                                  (iapService?.errorMessage.value.isNotEmpty ??
+                                      false))
+                                Builder(
+                                  builder: (context) {
+                                    final isSuccess = iapService!
+                                        .successMessage
+                                        .value
+                                        .isNotEmpty;
+                                    return Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          isSuccess
+                                              ? Icons.check_circle_outline
+                                              : Icons.error_outline,
+                                          size: 15,
+                                          color: isSuccess
+                                              ? const Color(0xFF15803D)
+                                              : const Color(0xFFB91C1C),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            isSuccess
+                                                ? iapService.successMessage.value
+                                                : iapService.errorMessage.value,
+                                            style: TextStyle(
+                                              color: isSuccess
+                                                  ? const Color(0xFF15803D)
+                                                  : const Color(0xFFB91C1C),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                             ],
                           ),
