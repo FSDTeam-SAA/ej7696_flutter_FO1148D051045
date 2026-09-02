@@ -12,7 +12,10 @@ import '../models/payment_success_details.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
 
-const Map<String, String> examIapProductIds = {
+// Six-month per-exam identifiers. Paused (see [examOneMonthUnlockActive])
+// but kept configured end-to-end in every store so they can be resumed later
+// without redoing App Store Connect / Play Console / RevenueCat setup.
+const Map<String, String> examIapProductIdsSixMonth = {
   'API_1184': 'com.inspectorspath.exam.api1184.sixmonth',
   'API_510': 'com.inspectorspath.exam.api510.sixmonth',
   'API_570': 'com.inspectorspath.exam.api570.sixmonth',
@@ -24,7 +27,7 @@ const Map<String, String> examIapProductIds = {
   'API_SIRE': 'com.inspectorspath.exam.sire.sixmonth',
 };
 
-const Map<String, String> examAndroidBasePlanIds = {
+const Map<String, String> examAndroidBasePlanIdsSixMonth = {
   'API_1184': 'api1184sixmonth',
   'API_510': 'api510sixmonth',
   'API_570': 'api570sixmonth',
@@ -35,6 +38,62 @@ const Map<String, String> examAndroidBasePlanIds = {
   'API_SIFE': 'sifesixmonth',
   'API_SIRE': 'siresixmonth',
 };
+
+// One-month per-exam identifiers. Active as of the Aug 2026 pricing change.
+const Map<String, String> examIapProductIdsOneMonth = {
+  'API_1184': 'com.inspectorspath.exam.api1184.onemonth',
+  'API_510': 'com.inspectorspath.exam.api510.onemonth',
+  'API_570': 'com.inspectorspath.exam.api570.onemonth',
+  'API_653': 'com.inspectorspath.exam.api653.onemonth',
+  'API_936': 'com.inspectorspath.exam.api936.onemonth',
+  'API_1169': 'com.inspectorspath.exam.api1169.onemonth',
+  'API_SIEE': 'com.inspectorspath.exam.siee.onemonth',
+  'API_SIFE': 'com.inspectorspath.exam.sife.onemonth',
+  'API_SIRE': 'com.inspectorspath.exam.sire.onemonth',
+};
+
+// Android keeps the six-month product ID and only swaps the base plan,
+// since Play (unlike Apple) supports multiple base plans per subscription.
+const Map<String, String> examAndroidBasePlanIdsOneMonth = {
+  'API_1184': 'api1184onemonth',
+  'API_510': 'api510onemonth',
+  'API_570': 'api570onemonth',
+  'API_653': 'api653onemonth',
+  'API_936': 'api936onemonth',
+  'API_1169': 'api1169onemonth',
+  'API_SIEE': 'sieeonemonth',
+  'API_SIFE': 'sifeonemonth',
+  'API_SIRE': 'sireonemonth',
+};
+
+// Flip to false (and ship a build) to resume selling the six-month exam
+// unlock instead. Both durations stay fully configured in every store either
+// way, so this is the only line that needs to change to switch back.
+const bool examOneMonthUnlockActive = true;
+
+const int examUnlockDurationMonths = examOneMonthUnlockActive ? 1 : 6;
+const String examUnlockDurationLabel = examOneMonthUnlockActive
+    ? '1 month'
+    : '6 months';
+
+Map<String, String> get examIapProductIds => examOneMonthUnlockActive
+    ? examIapProductIdsOneMonth
+    : examIapProductIdsSixMonth;
+
+Map<String, String> get examAndroidBasePlanIds => examOneMonthUnlockActive
+    ? examAndroidBasePlanIdsOneMonth
+    : examAndroidBasePlanIdsSixMonth;
+
+String _comboExamProductId(
+  String code,
+  Map<String, String> productIds,
+  Map<String, String> basePlanIds,
+) {
+  final baseId = productIds[code] ?? '';
+  if (baseId.isEmpty) return '';
+  final basePlanId = basePlanIds[code] ?? '';
+  return basePlanId.isEmpty ? '' : '$baseId:$basePlanId';
+}
 
 const Map<String, String> legacyExamIapProductIds = {
   'API_1184': 'com.inspectorspath.exam.api1184.unlock',
@@ -49,11 +108,17 @@ const Map<String, String> legacyExamIapProductIds = {
 };
 
 String examSubscriptionProductId(String code, {bool? isAndroid}) {
-  final baseId = examIapProductIds[code] ?? '';
-  if (baseId.isEmpty) return '';
-  if (!(isAndroid ?? Platform.isAndroid)) return baseId;
-  final basePlanId = examAndroidBasePlanIds[code] ?? '';
-  return basePlanId.isEmpty ? '' : '$baseId:$basePlanId';
+  if (!(isAndroid ?? Platform.isAndroid)) {
+    return examIapProductIds[code] ?? '';
+  }
+  // Android never got a separate one-month product: Play lets one
+  // subscription carry multiple base plans, so the product ID stays the
+  // original six-month one and only the base-plan suffix changes.
+  return _comboExamProductId(
+    code,
+    examIapProductIdsSixMonth,
+    examAndroidBasePlanIds,
+  );
 }
 
 const String professionalSubscriptionId = 'six_month_subscriptions';
@@ -71,20 +136,33 @@ Set<String> ownedExamCodes({
 }) {
   final purchasedIds = purchasedProductIds.toSet();
   final entitlementIds = activeEntitlementIds.toSet();
-  return examIapProductIds.entries
-      .where((entry) {
+  return examIapProductIdsOneMonth.keys
+      .where((code) {
         final entitlementId =
-            'exam_${entry.key.toLowerCase().replaceFirst('api_', '')}';
-        final androidProductId = examSubscriptionProductId(
-          entry.key,
-          isAndroid: true,
-        );
-        return purchasedIds.contains(entry.value) ||
-            purchasedIds.contains(androidProductId) ||
-            purchasedIds.contains(legacyExamIapProductIds[entry.key]) ||
+            'exam_${code.toLowerCase().replaceFirst('api_', '')}';
+        // Check both durations regardless of which one is currently active,
+        // so a customer who bought under the paused duration stays
+        // recognized after the active one changes.
+        final candidateProductIds = <String>{
+          examIapProductIdsOneMonth[code] ?? '',
+          examIapProductIdsSixMonth[code] ?? '',
+          legacyExamIapProductIds[code] ?? '',
+          // Android's product ID never changed durations, only the base
+          // plan suffix did, so both suffixes pair with the six-month base.
+          _comboExamProductId(
+            code,
+            examIapProductIdsSixMonth,
+            examAndroidBasePlanIdsOneMonth,
+          ),
+          _comboExamProductId(
+            code,
+            examIapProductIdsSixMonth,
+            examAndroidBasePlanIdsSixMonth,
+          ),
+        }..removeWhere((id) => id.isEmpty);
+        return candidateProductIds.any(purchasedIds.contains) ||
             entitlementIds.contains(entitlementId);
       })
-      .map((entry) => entry.key)
       .toSet();
 }
 
@@ -117,12 +195,23 @@ bool revenueCatSyncConfirmsProduct({
         selectedExam['examId']?.toString() == examId;
   }
 
-  final isExamProduct = examIapProductIds.entries.any(
-    (entry) =>
-        normalizedProductId == entry.value ||
-        normalizedProductId ==
-            examSubscriptionProductId(entry.key, isAndroid: true),
-  );
+  final isExamProduct = examIapProductIdsOneMonth.keys.any((code) {
+    final candidateProductIds = <String>{
+      examIapProductIdsOneMonth[code] ?? '',
+      examIapProductIdsSixMonth[code] ?? '',
+      _comboExamProductId(
+        code,
+        examIapProductIdsSixMonth,
+        examAndroidBasePlanIdsOneMonth,
+      ),
+      _comboExamProductId(
+        code,
+        examIapProductIdsSixMonth,
+        examAndroidBasePlanIdsSixMonth,
+      ),
+    }..removeWhere((id) => id.isEmpty);
+    return candidateProductIds.contains(normalizedProductId);
+  });
   if (!isExamProduct) return false;
   final normalizedExamId = examId?.trim() ?? '';
   if (normalizedExamId.isEmpty) return false;
@@ -694,11 +783,15 @@ class IapService extends GetxService {
         billingCycleLabel: intent.kind == IapPurchaseKind.professional
             ? '6 months'
             : null,
-        unlockDurationLabel: '6 months',
+        unlockDurationLabel: intent.kind == IapPurchaseKind.professional
+            ? '6 months'
+            : examUnlockDurationLabel,
         expiresAt: DateTime.tryParse(
           selectedExamData['expiresAt']?.toString() ?? '',
         ),
-        expiryMonths: 6,
+        expiryMonths: intent.kind == IapPurchaseKind.professional
+            ? 6
+            : examUnlockDurationMonths,
         paymentMethodLabel: Platform.isIOS
             ? 'Apple In-App Purchase'
             : 'Google Play In-App Purchase',
