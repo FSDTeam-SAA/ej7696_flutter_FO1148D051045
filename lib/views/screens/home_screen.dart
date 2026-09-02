@@ -1265,7 +1265,7 @@ class _CourseStatus extends StatelessWidget {
           : iapUnavailable
           ? 'Unavailable'
           : iapPrice != null
-          ? '${isExpired ? 'Renew' : 'Unlock'} for $iapPrice / 6 months'
+          ? '${isExpired ? 'Renew' : 'Unlock'} for $iapPrice / $examUnlockDurationLabel'
           : '${isExpired ? 'Renew for \$150' : _formatUnlockLabel(unlockPrice, currency)} / 6 months';
       return Container(
         width: stretch ? double.infinity : null,

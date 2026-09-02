@@ -3,32 +3,53 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ownedExamCodes', () {
-    test('builds the configured store product IDs', () {
+    test('builds the configured store product IDs (one-month active)', () {
       expect(
         examSubscriptionProductId('API_1184', isAndroid: true),
-        'com.inspectorspath.exam.api1184.sixmonth:api1184sixmonth',
+        'com.inspectorspath.exam.api1184.sixmonth:api1184onemonth',
       );
       expect(
         examSubscriptionProductId('API_SIRE', isAndroid: true),
-        'com.inspectorspath.exam.sire.sixmonth:siresixmonth',
+        'com.inspectorspath.exam.sire.sixmonth:sireonemonth',
+      );
+      // Android never got a separate one-month product ID; only the base
+      // plan suffix changed under the existing six-month subscription.
+      expect(
+        examSubscriptionProductId('API_1184', isAndroid: true),
+        isNot(contains('.onemonth:')),
       );
       expect(
         examSubscriptionProductId('API_1184', isAndroid: false),
-        'com.inspectorspath.exam.api1184.sixmonth',
+        'com.inspectorspath.exam.api1184.onemonth',
       );
     });
 
-    test('maps Android prepaid products to exam codes', () {
+    test('maps one-month Android prepaid products to exam codes', () {
       final result = ownedExamCodes(
         purchasedProductIds: const <String>{
-          'com.inspectorspath.exam.api1184.sixmonth:api1184sixmonth',
-          'com.inspectorspath.exam.sire.sixmonth:siresixmonth',
+          'com.inspectorspath.exam.api1184.sixmonth:api1184onemonth',
+          'com.inspectorspath.exam.sire.sixmonth:sireonemonth',
         },
         activeEntitlementIds: const <String>{},
       );
 
       expect(result, equals(<String>{'API_1184', 'API_SIRE'}));
     });
+
+    test(
+      'still recognizes six-month purchases made before the switch to one-month',
+      () {
+        final result = ownedExamCodes(
+          purchasedProductIds: const <String>{
+            'com.inspectorspath.exam.api1184.sixmonth:api1184sixmonth',
+            'com.inspectorspath.exam.sire.sixmonth:siresixmonth',
+          },
+          activeEntitlementIds: const <String>{},
+        );
+
+        expect(result, equals(<String>{'API_1184', 'API_SIRE'}));
+      },
+    );
 
     test('maps purchased non-subscription products to exam codes', () {
       final result = ownedExamCodes(
