@@ -520,7 +520,7 @@ class HomeDashboard extends StatelessWidget {
               fallbackCurrency:
                   (createRes.data?['currency']?.toString() ?? 'USD')
                       .toUpperCase(),
-              fallbackUnlockDurationLabel: '6 months',
+              fallbackUnlockDurationLabel: examUnlockDurationLabel,
               fallbackPaymentMethodLabel: 'Card',
               fallbackPaidAt: fallbackPaidAt,
               fallbackProvider: 'stripe',
@@ -1266,7 +1266,7 @@ class _CourseStatus extends StatelessWidget {
           ? 'Unavailable'
           : iapPrice != null
           ? '${isExpired ? 'Renew' : 'Unlock'} for $iapPrice / $examUnlockDurationLabel'
-          : '${isExpired ? 'Renew for \$150' : _formatUnlockLabel(unlockPrice, currency)} / 6 months';
+          : '${isExpired ? 'Renew' : 'Unlock'} for ${_formatUnlockLabel(unlockPrice, currency)} / $examUnlockDurationLabel';
       return Container(
         width: stretch ? double.infinity : null,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

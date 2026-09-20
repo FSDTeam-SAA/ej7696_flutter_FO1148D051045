@@ -53,10 +53,15 @@ android {
 
     buildTypes {
         release {
-            if (!keystorePropertiesFile.exists()) {
+            // Only enforce the keystore when a release artifact is actually being built,
+            // so debug/profile runs work without android/key.properties.
+            val isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+            if (isReleaseTask && !keystorePropertiesFile.exists()) {
                 throw GradleException("Release signing requires android/key.properties. Refusing to build a debug-signed release bundle.")
             }
-            signingConfig = signingConfigs.getByName("release")
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }

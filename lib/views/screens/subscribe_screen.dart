@@ -32,13 +32,13 @@ class SubscribeScreen extends StatefulWidget {
 }
 
 class _SubscribeScreenState extends State<SubscribeScreen> {
-  static const String _proPlanTitle = 'Pro Plan 6 Months';
-  static const String _proPlanDuration = '6 months';
+  static const String _proPlanTitle = professionalPlanTitle;
+  static const String _proPlanDuration = professionalDurationLabel;
   static const String _proPlanBenefitsText =
       'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
   String get _proPlanRenewalText => Platform.isAndroid
-      ? 'This subscription auto-renews every 6 months unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
-      : 'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
+      ? 'This subscription auto-renews every $professionalDurationLabel unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
+      : 'This subscription auto-renews every $professionalDurationLabel unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
   static const String _proPlanAgreementText =
       'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
@@ -1108,7 +1108,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
               fallbackCurrency:
                   (createRes.data?['currency']?.toString() ?? 'USD')
                       .toUpperCase(),
-              fallbackUnlockDurationLabel: '3 months',
+              fallbackUnlockDurationLabel: examUnlockDurationLabel,
               fallbackExpiresAt: fallbackExamExpiresAt,
               fallbackExpiryMonths: 3,
               fallbackPaymentMethodLabel: 'Card',
@@ -1472,12 +1472,14 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     final subscription = plan?.subscription;
     final profileUser = _userController.user.value;
     final billingCycle =
-        subscription?.billingCycle?.label ?? plan?.interval.label ?? '6 months';
+        subscription?.billingCycle?.label ??
+        plan?.interval.label ??
+        professionalDurationLabel;
     final nextBillingDate = _formatDate(
       profileUser?.subscriptionExpiresAt ?? subscription?.nextBillingDate,
     );
     final planPrice = plan?.priceFormatted ?? '\$180.00';
-    const intervalLabel = '/ 6 months';
+    const intervalLabel = '/ $professionalDurationLabel';
     final unlockLabel = plan?.unlockExamPriceFormatted ?? '\$250.00';
 
     return Container(
@@ -1610,7 +1612,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
                 ),
               ),
               child: Text(
-                'Unlock another exam for $unlockLabel',
+                'Unlock another exam for $unlockLabel / $examUnlockDurationLabel',
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.visible,

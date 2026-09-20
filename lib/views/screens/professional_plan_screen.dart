@@ -20,8 +20,8 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
   static const String _benefitsText =
       'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
   String get _renewalText => Platform.isAndroid
-      ? 'This subscription auto-renews every 6 months unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
-      : 'This subscription auto-renews every 6 months unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
+      ? 'This subscription auto-renews every $professionalDurationLabel unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
+      : 'This subscription auto-renews every $professionalDurationLabel unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
   static const String _agreementText =
       'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
@@ -127,7 +127,7 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                   const SizedBox(width: 12),
                                   const Expanded(
                                     child: Text(
-                                      'Pro Plan 6 Months',
+                                      professionalPlanTitle,
                                       style: TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.bold,
@@ -152,7 +152,7 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '/ 6 months',
+                                    '/ $professionalDurationLabel',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey[600],

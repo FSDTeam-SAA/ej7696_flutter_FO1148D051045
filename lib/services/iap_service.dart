@@ -121,12 +121,28 @@ String examSubscriptionProductId(String code, {bool? isAndroid}) {
   );
 }
 
+// Flip to false (and ship a build) to resume selling the six-month Pro plan.
+const bool professionalOneMonthActive = true;
+
+const int professionalDurationMonths = professionalOneMonthActive ? 1 : 6;
+const String professionalDurationLabel = professionalOneMonthActive
+    ? '1 month'
+    : '6 months';
+const String professionalPlanTitle = professionalOneMonthActive
+    ? 'Pro Plan 1 Month'
+    : 'Pro Plan 6 Months';
+
 const String professionalSubscriptionId = 'six_month_subscriptions';
-const String professionalSubscriptionBasePlanId = 'six-month';
+const String professionalSubscriptionBasePlanId = professionalOneMonthActive
+    ? 'one-month'
+    : 'six-month';
+// Like the exam unlocks, Android keeps the original Play subscription and
+// only switches base plan; iOS has a separate App Store product.
 const String androidProfessionalSubscriptionProductId =
     '$professionalSubscriptionId:$professionalSubscriptionBasePlanId';
-const String appleProfessionalSubscriptionProductId =
-    professionalSubscriptionId;
+const String appleProfessionalSubscriptionProductId = professionalOneMonthActive
+    ? 'one_month_subscriptions'
+    : professionalSubscriptionId;
 const String professionalEntitlementId = 'professional_access';
 
 @visibleForTesting
@@ -781,16 +797,16 @@ class IapService extends GetxService {
         amountPaid: product.price,
         currency: product.currencyCode,
         billingCycleLabel: intent.kind == IapPurchaseKind.professional
-            ? '6 months'
+            ? professionalDurationLabel
             : null,
         unlockDurationLabel: intent.kind == IapPurchaseKind.professional
-            ? '6 months'
+            ? professionalDurationLabel
             : examUnlockDurationLabel,
         expiresAt: DateTime.tryParse(
           selectedExamData['expiresAt']?.toString() ?? '',
         ),
         expiryMonths: intent.kind == IapPurchaseKind.professional
-            ? 6
+            ? professionalDurationMonths
             : examUnlockDurationMonths,
         paymentMethodLabel: Platform.isIOS
             ? 'Apple In-App Purchase'
