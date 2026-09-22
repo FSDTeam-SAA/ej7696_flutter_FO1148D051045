@@ -335,6 +335,32 @@ class IapService extends GetxService {
   final Rx<IapCompletedPurchase?> lastCompletedPurchase =
       Rx<IapCompletedPurchase?>(null);
 
+  /// What the purchase in flight is waiting on, for the blocking progress
+  /// overlay. Empty when no store purchase is running.
+  final RxString purchaseStage = ''.obs;
+
+  /// Screens still refreshing data or navigating after a completed purchase.
+  /// A count rather than a flag because Home and Subscribe can both be
+  /// finishing the same purchase, and the overlay must wait for the last one.
+  final RxInt _finishingPurchaseCount = 0.obs;
+  RxInt get finishingPurchaseCount => _finishingPurchaseCount;
+  bool get isFinishingPurchase => _finishingPurchaseCount.value > 0;
+
+  /// Keeps the progress overlay up while [work] runs.
+  Future<T> whileFinishingPurchase<T>(Future<T> Function() work) async {
+    _finishingPurchaseCount.value++;
+    try {
+      return await work();
+    } finally {
+      _finishingPurchaseCount.value--;
+    }
+  }
+
+  bool get isPurchaseBusy =>
+      inFlightProductIds.isNotEmpty || isFinishingPurchase;
+
+  void clearStatusMessages() => _clearMessages();
+
   void _clearMessages() {
     errorMessage.value = '';
     successMessage.value = '';
@@ -623,6 +649,9 @@ class IapService extends GetxService {
     _pendingIntents[productId] = intent;
     inFlightProductIds.add(productId);
     _clearMessages();
+    purchaseStage.value = Platform.isIOS
+        ? 'Waiting for the App Store...'
+        : 'Waiting for Google Play...';
     try {
       final identified = await _identifyRevenueCatUserForPurchase();
       if (!identified) return false;
@@ -635,7 +664,10 @@ class IapService extends GetxService {
           ? rc.PurchaseParams.storeProduct(product)
           : rc.PurchaseParams.package(package);
       final result = await rc.Purchases.purchase(purchaseParams);
-      return _deliverRevenueCatPurchase(intent, product, result);
+      purchaseStage.value = 'Activating your access...';
+      // Awaited so the finally block below only clears the in-flight state
+      // once the backend has confirmed access.
+      return await _deliverRevenueCatPurchase(intent, product, result);
     } on PlatformException catch (e) {
       final code = rc.PurchasesErrorHelper.getErrorCode(e);
       debugPrint(
@@ -646,14 +678,15 @@ class IapService extends GetxService {
       switch (code) {
         case rc.PurchasesErrorCode.purchaseCancelledError:
           if (Platform.isIOS) {
+            purchaseStage.value = 'Checking your purchase...';
             final restored = await _recoverCancelledIosPurchase(
               productId: productId,
               intent: intent,
             );
             if (restored) return true;
-            if (errorMessage.value.isNotEmpty) break;
           }
-          errorMessage.value = 'Purchase cancelled. Nothing was charged.';
+          // The user closed the store sheet themselves. That is a normal
+          // outcome, not an error, so leave the status line empty.
           break;
         case rc.PurchasesErrorCode.paymentPendingError:
           errorMessage.value =
@@ -686,6 +719,7 @@ class IapService extends GetxService {
       errorMessage.value = 'Purchase failed. Please try again.';
       return false;
     } finally {
+      purchaseStage.value = '';
       inFlightProductIds.remove(productId);
       _pendingIntents.remove(productId);
     }
@@ -699,14 +733,27 @@ class IapService extends GetxService {
       'RevenueCat: iOS reported a cancelled purchase; checking the App Store receipt for an existing active purchase.',
     );
     try {
-      final customerInfo = await rc.Purchases.restorePurchases();
-      _latestCustomerInfo = customerInfo;
-      final hasActiveProduct = revenueCatCustomerHasActiveProduct(
-        productId: productId,
-        activeSubscriptionIds: customerInfo.activeSubscriptions,
-        activeEntitlementProductIds: customerInfo.entitlements.active.values
-            .map((entitlement) => entitlement.productIdentifier),
-      );
+      // StoreKit can report a cancel while the App Store is still finishing
+      // the transaction (for example after an Apple ID sign-in prompt), so
+      // re-check a few times before treating it as a real cancel.
+      var hasActiveProduct = false;
+      for (var attempt = 0; attempt < 3 && !hasActiveProduct; attempt++) {
+        final rc.CustomerInfo customerInfo;
+        if (attempt == 0) {
+          customerInfo = await rc.Purchases.restorePurchases();
+        } else {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          await rc.Purchases.invalidateCustomerInfoCache();
+          customerInfo = await rc.Purchases.getCustomerInfo();
+        }
+        _latestCustomerInfo = customerInfo;
+        hasActiveProduct = revenueCatCustomerHasActiveProduct(
+          productId: productId,
+          activeSubscriptionIds: customerInfo.activeSubscriptions,
+          activeEntitlementProductIds: customerInfo.entitlements.active.values
+              .map((entitlement) => entitlement.productIdentifier),
+        );
+      }
       if (!hasActiveProduct) {
         debugPrint(
           'RevenueCat: cancelled purchase recovery found no active product for $productId.',
@@ -722,8 +769,7 @@ class IapService extends GetxService {
       if (Get.isRegistered<UserController>()) {
         await Get.find<UserController>().refreshProfile();
       }
-      successMessage.value =
-          'Your existing purchase has been restored. Access is now active.';
+      successMessage.value = 'Purchase complete. Your access is now active.';
       debugPrint(
         'RevenueCat: recovered active App Store purchase for $productId.',
       );
@@ -1213,7 +1259,6 @@ class IapService extends GetxService {
         case rc_ui.PaywallResult.notPresented:
           return hasAccess;
         case rc_ui.PaywallResult.cancelled:
-          errorMessage.value = 'Purchase cancelled.';
           return false;
         case rc_ui.PaywallResult.error:
           errorMessage.value =

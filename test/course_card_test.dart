@@ -1,3 +1,4 @@
+import 'package:ej_flutter/services/iap_service.dart';
 import 'package:ej_flutter/views/screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +11,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     const title = 'API 510 - Pressure Vessel Inspector';
-    const action = 'Unlock for \$149.99 / 6 months';
+    const action = 'Unlock for \$149.99 / $examUnlockDurationLabel';
 
     await tester.pumpWidget(
       MaterialApp(

@@ -19,7 +19,6 @@ import '../../services/exam_service.dart';
 import '../../services/iap_service.dart';
 import '../../services/storage_service.dart';
 import '../../utils/app_constants.dart';
-import '../../utils/legal_link_launcher.dart';
 import '../widgets/app_shimmer.dart';
 import '../widgets/gradient_background.dart';
 import '../widgets/unlock_exam_dialog.dart';
@@ -34,13 +33,6 @@ class SubscribeScreen extends StatefulWidget {
 class _SubscribeScreenState extends State<SubscribeScreen> {
   static const String _proPlanTitle = professionalPlanTitle;
   static const String _proPlanDuration = professionalDurationLabel;
-  static const String _proPlanBenefitsText =
-      'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
-  String get _proPlanRenewalText => Platform.isAndroid
-      ? 'This subscription auto-renews every $professionalDurationLabel unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
-      : 'This subscription auto-renews every $professionalDurationLabel unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
-  static const String _proPlanAgreementText =
-      'By subscribing, you agree to our Terms of Use and Privacy Policy.';
 
   final ExamService _examService = ExamService();
   final ApiService _apiService = ApiService();
@@ -84,14 +76,16 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       return;
     }
     _lastHandledIapCompletion = completed;
-    // Keep the cached exam list in step with the profile, otherwise Home still
-    // renders the old locked card when the user navigates back.
-    await Future.wait([
-      _userController.refreshProfile(),
-      if (Get.isRegistered<HomeController>())
-        Get.find<HomeController>().fetchActiveExams(),
-    ]);
-    await _loadProfessionalPlan();
+    await Get.find<IapService>().whileFinishingPurchase(() async {
+      // Keep the cached exam list in step with the profile, otherwise Home
+      // still renders the old locked card when the user navigates back.
+      await Future.wait([
+        _userController.refreshProfile(),
+        if (Get.isRegistered<HomeController>())
+          Get.find<HomeController>().fetchActiveExams(),
+      ]);
+      await _loadProfessionalPlan();
+    });
     if (!mounted) return;
 
     if (completed.kind == IapPurchaseKind.professional) {
@@ -297,18 +291,6 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
     final message = response.message?.toLowerCase() ?? '';
     return message.contains('resource purchase id already exists');
   }
-
-  Future<void> _openPrivacyPolicy() => openLegalLink(
-    context,
-    AppConstants.privacyPolicyUrl,
-    fallbackRoute: '/privacy-policy',
-  );
-
-  Future<void> _openTermsOfUse() => openLegalLink(
-    context,
-    AppConstants.termsOfUseUrl,
-    fallbackRoute: '/terms-of-service',
-  );
 
   Future<void> _completeProfessionalUpgradeSuccess(
     ExamModel exam, {
@@ -609,24 +591,6 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
       );
     }
 
-    children.add(const SizedBox(height: 18));
-    children.add(
-      Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        runSpacing: 4,
-        children: [
-          TextButton(
-            onPressed: _openPrivacyPolicy,
-            child: const Text('Privacy Policy'),
-          ),
-          TextButton(
-            onPressed: _openTermsOfUse,
-            child: const Text('Terms of Use'),
-          ),
-        ],
-      ),
-    );
     children.add(const SizedBox(height: 32));
     return Column(children: children);
   }
@@ -1332,7 +1296,9 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
           Container(height: 1, color: Colors.grey[200]),
           const SizedBox(height: 20),
           Text(
-            isStarter ? 'What\'s Included in Your Plan' : 'Benefits',
+            isStarter
+                ? 'What\'s Included in Your Plan'
+                : plan?.description ?? 'Benefits',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -1340,51 +1306,7 @@ class _SubscribeScreenState extends State<SubscribeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (isStarter)
-            ..._buildFeaturesList(isStarter, professionalPlan: plan)
-          else ...[
-            const Text(
-              _proPlanBenefitsText,
-              style: TextStyle(
-                fontSize: 14,
-                color: Color(0xFF111827),
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _proPlanRenewalText,
-              style: TextStyle(
-                fontSize: 13,
-                color: Color(0xFF4B5563),
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              _proPlanAgreementText,
-              style: TextStyle(
-                fontSize: 13,
-                color: Color(0xFF4B5563),
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 0,
-              children: [
-                TextButton(
-                  onPressed: _openTermsOfUse,
-                  child: const Text('Terms of Use'),
-                ),
-                TextButton(
-                  onPressed: _openPrivacyPolicy,
-                  child: const Text('Privacy Policy'),
-                ),
-              ],
-            ),
-          ],
+          ..._buildFeaturesList(isStarter, professionalPlan: plan),
           const SizedBox(height: 24),
           if (isStarter)
             SizedBox(

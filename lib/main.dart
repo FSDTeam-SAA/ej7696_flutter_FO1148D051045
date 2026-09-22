@@ -13,6 +13,7 @@ import 'controllers/quiz_voice_controller.dart';
 import 'controllers/splash_controller.dart';
 import 'controllers/theme_controller.dart';
 import 'services/iap_service.dart';
+import 'views/widgets/purchase_progress_overlay.dart';
 
 final _router = getRouter();
 
@@ -78,6 +79,8 @@ class _MyAppState extends State<MyApp> {
         darkTheme: AppTheme.darkTheme,
         themeMode: themeMode,
         routerConfig: _router,
+        builder: (context, child) =>
+            PurchaseProgressOverlay(child: child ?? const SizedBox.shrink()),
       );
     });
   }

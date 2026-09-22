@@ -158,10 +158,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Both sources feed the unlocked state: the exam list carries `unlocked`
     // and the profile carries the unlocked ids. Refreshing only one of them
     // left the other stale until the next poll.
-    await Future.wait([
-      _homeController.fetchActiveExams(),
-      _userController.refreshProfile(),
-    ]);
+    await Get.find<IapService>().whileFinishingPurchase(
+      () => Future.wait([
+        _homeController.fetchActiveExams(),
+        _userController.refreshProfile(),
+      ]),
+    );
     if (!mounted) return;
 
     final examId = (completed.examId ?? '').trim();

@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/iap_service.dart';
-import '../../utils/app_constants.dart';
-import '../../utils/legal_link_launcher.dart';
 import '../widgets/gradient_background.dart';
 
 class ProfessionalPlanScreen extends StatefulWidget {
@@ -19,23 +17,6 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
   final RxBool _screenTick = false.obs;
   static const String _benefitsText =
       'Includes full access to API certification exam preparation, all API exams, full-length mock exams, timed simulation mode, study mode, progress tracking, performance dashboard, exam history, and detailed answer explanations.';
-  String get _renewalText => Platform.isAndroid
-      ? 'This subscription auto-renews every $professionalDurationLabel unless cancelled before the end of the current period. Payment will be charged to your Google Play account at confirmation of purchase. You can manage or cancel your subscription in Google Play subscription settings.'
-      : 'This subscription auto-renews every $professionalDurationLabel unless cancelled at least 24 hours before the end of the current period. Payment will be charged to your Apple ID account at confirmation of purchase. You can manage or cancel your subscription in your Apple ID subscription settings.';
-  static const String _agreementText =
-      'By subscribing, you agree to our Terms of Use and Privacy Policy.';
-
-  Future<void> _openPrivacyPolicy() => openLegalLink(
-    context,
-    AppConstants.privacyPolicyUrl,
-    fallbackRoute: '/privacy-policy',
-  );
-
-  Future<void> _openTermsOfUse() => openLegalLink(
-    context,
-    AppConstants.termsOfUseUrl,
-    fallbackRoute: '/terms-of-service',
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -179,39 +160,6 @@ class _ProfessionalPlanScreenState extends State<ProfessionalPlanScreen> {
                                   color: Color(0xFF111827),
                                   height: 1.5,
                                 ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                _renewalText,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF4B5563),
-                                  height: 1.45,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              const Text(
-                                _agreementText,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF4B5563),
-                                  height: 1.45,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                alignment: WrapAlignment.center,
-                                spacing: 8,
-                                children: [
-                                  TextButton(
-                                    onPressed: _openTermsOfUse,
-                                    child: const Text('Terms of Use'),
-                                  ),
-                                  TextButton(
-                                    onPressed: _openPrivacyPolicy,
-                                    child: const Text('Privacy Policy'),
-                                  ),
-                                ],
                               ),
                               const SizedBox(height: 24),
                               // Upgrade Button
