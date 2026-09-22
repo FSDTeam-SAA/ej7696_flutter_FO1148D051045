@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../controllers/user_controller.dart';
 import '../models/payment_success_details.dart';
 import 'api_service.dart';
+import '../utils/api_endpoints.dart';
 import 'storage_service.dart';
 
 // Six-month per-exam identifiers. Paused (see [examOneMonthUnlockActive])
@@ -332,6 +333,40 @@ class IapService extends GetxService {
   final RxString successMessage = ''.obs;
   final RxSet<String> missingProductIds = <String>{}.obs;
   final RxSet<String> inFlightProductIds = <String>{}.obs;
+  final Map<String, String> _configuredExamProductIds = {};
+
+  Future<void> _loadConfiguredExamProducts() async {
+    final response = await ApiService().get<Map<String, dynamic>>(
+      ApiEndpoints.exams,
+      queryParams: {'page': '1', 'limit': '1000'},
+      fromJson: (json) => Map<String, dynamic>.from(json as Map),
+    );
+    if (!response.success) return;
+    final exams = response.data?['exams'];
+    if (exams is! List) return;
+    _configuredExamProductIds.clear();
+    for (final item in exams) {
+      if (item is! Map) continue;
+      final id = (item['_id'] ?? '').toString();
+      final products = item['storeProducts'];
+      if (id.isEmpty || products is! Map) continue;
+      final productId = Platform.isAndroid
+          ? '${products['googleProductId'] ?? ''}:${products['googleBasePlanId'] ?? ''}'
+          : (products['appleProductId'] ?? '').toString();
+      if (productId.isNotEmpty && productId != ':') {
+        _configuredExamProductIds[id] = productId;
+      }
+    }
+  }
+
+  String? productIdForExam({required String examId, String? examCode, String? examName}) {
+    final configured = _configuredExamProductIds[examId];
+    if (configured != null) return configured;
+    final code = resolveExamCode(code: examCode, name: examName);
+    if (code == null) return null;
+    final productId = examSubscriptionProductId(code);
+    return productId.isEmpty ? null : productId;
+  }
   final Rx<IapCompletedPurchase?> lastCompletedPurchase =
       Rx<IapCompletedPurchase?>(null);
 
@@ -382,6 +417,7 @@ class IapService extends GetxService {
 
   Set<String> get allProductIds => <String>{
     ...examIapProductIds.keys.map(examSubscriptionProductId),
+    ..._configuredExamProductIds.values,
     professionalSubscriptionProductId,
   };
 
@@ -409,9 +445,8 @@ class IapService extends GetxService {
     await _loadRevenueCatProducts();
   }
 
-  String? priceForExam({required String? examCode, required String? examName}) {
-    final code = resolveExamCode(code: examCode, name: examName);
-    final productId = code == null ? null : examSubscriptionProductId(code);
+  String? priceForExam({required String? examCode, required String? examName, String examId = ''}) {
+    final productId = productIdForExam(examId: examId, examCode: examCode, examName: examName);
     return productId == null
         ? null
         : _revenueCatProducts[productId]?.priceString;
@@ -456,13 +491,14 @@ class IapService extends GetxService {
     required String examName,
   }) async {
     if (!isMobileStore) return false;
-    final resolvedCode = resolveExamCode(code: examCode, name: examName);
-    final productId = resolvedCode == null
-        ? null
-        : examSubscriptionProductId(resolvedCode);
+    await _loadConfiguredExamProducts();
+    final productId = productIdForExam(examId: examId, examCode: examCode, examName: examName);
     if (productId == null) {
       errorMessage.value = 'Purchase is not available for this exam.';
       return false;
+    }
+    if (!_revenueCatProducts.containsKey(productId)) {
+      await loadProducts();
     }
     final intent = _PendingIapIntent(
       kind: IapPurchaseKind.exam,
@@ -568,6 +604,8 @@ class IapService extends GetxService {
         return;
       }
 
+      await _loadConfiguredExamProducts();
+
       _offerings = await rc.Purchases.getOfferings();
       final packages = _offerings!.all.values
           .expand((offering) => offering.availablePackages)
@@ -592,9 +630,7 @@ class IapService extends GetxService {
         ], productCategory: rc.ProductCategory.subscription);
       }
       final examProducts = await rc.Purchases.getProducts(
-        examIapProductIds.keys
-            .map(examSubscriptionProductId)
-            .toList(growable: false),
+        allProductIds.where((id) => id != professionalSubscriptionProductId).toList(growable: false),
         productCategory: rc.ProductCategory.subscription,
       );
       _revenueCatProducts

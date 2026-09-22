@@ -112,6 +112,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!_homeController.isLoading.value) {
       await _homeController.fetchActiveExams();
     }
+    if (Get.isRegistered<IapService>()) {
+      await Get.find<IapService>().loadProducts();
+      if (mounted) setState(() {});
+    }
     if (!_homeController.isAnnouncementLoading.value) {
       await _homeController.fetchAnnouncements();
     }
@@ -817,16 +821,15 @@ class HomeDashboard extends StatelessWidget {
               return Column(
                 children: orderedItems.map((course) {
                   final isUnlocked = _isUnlocked(course);
-                  final resolvedExamCode = iapService?.resolveExamCode(
-                    code: course.code,
-                    name: course.title,
+                  final iapProductId = iapService?.productIdForExam(
+                    examId: course.examId ?? course.id,
+                    examCode: course.code,
+                    examName: course.title,
                   );
-                  final iapProductId = resolvedExamCode == null
-                      ? null
-                      : examSubscriptionProductId(resolvedExamCode);
                   final iapPrice = iapService?.priceForExam(
                     examCode: course.code,
                     examName: course.title,
+                    examId: course.examId ?? course.id,
                   );
                   final iapUnavailable =
                       iapService != null &&
