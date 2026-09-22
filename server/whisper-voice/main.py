@@ -26,6 +26,9 @@ command vocabulary and recovers most accent-misheard answers.
 
 from __future__ import annotations
 
+import lib.http_session
+import lib.transport
+import lib.session
 import asyncio
 import json
 import logging
